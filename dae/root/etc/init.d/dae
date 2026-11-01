@@ -1,0 +1,102 @@
+#!/bin/sh /etc/rc.common
+# procd service for dae with the native HTTP control plane.
+#
+# The service reads /etc/config/dae (UCI) and writes the api section into its
+# own file, /etc/dae/api.dae, so the listener address, the secret and the
+# panel path stay in UCI while the rest of the configuration stays in dae's own
+# format under /etc/dae.
+#
+# The default layout is the managed one: the entry file /etc/dae/config.dae
+# only holds one include block, and the modules live in /etc/dae/config.d/.
+# That layout is what dae's config editor needs to write through the API.
+
+USE_PROCD=1
+START=99
+STOP=10
+
+. /lib/functions.sh
+
+CONFIG=dae
+PROG=/usr/bin/dae
+API_FILE=/etc/dae/api.dae
+
+start_service() {
+	local enabled config_file api_listen api_secret api_write ui_path log_level
+	config_load "$CONFIG"
+	config_get_bool enabled main enabled 0
+	[ "$enabled" -eq "1" ] || return 1
+
+	config_get config_file main config_file "/etc/dae/config.dae"
+	config_get api_listen main api_listen "0.0.0.0:9527"
+	config_get api_secret main api_secret ""
+	config_get api_write main api_write "0"
+	config_get ui_path main ui_path "/usr/share/dae/doona"
+	config_get log_level main log_level "info"
+
+	write_api_section "$api_listen" "$api_secret" "$api_write" "$ui_path" || return 1
+
+	procd_open_instance dae
+	procd_set_param command "$PROG" run -c "$config_file"
+	# The geo data files live in /usr/share/v2ray, installed by the geo
+	# packages; point dae at them.
+	procd_set_param env DAE_LOCATION_ASSET=/usr/share/v2ray
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_set_param respawn 3600 5 5
+	procd_set_param limits nofile="1048576 1048576"
+	procd_close_instance
+}
+
+# A listener on a non-loopback address needs a secret. When UCI carries none,
+# generate one and write it back, so the panel can be used right after the
+# first start without an extra step.
+write_api_section() {
+	local listen secret write ui
+	listen="$1"; secret="$2"; write="$3"; ui="$4"
+
+	case "$listen" in
+		127.0.0.1:*|localhost:*|::1:*) ;;
+		*)
+			if [ -z "$secret" ]; then
+				# hex from /dev/urandom: a minimal busybox has neither base64
+				# nor od, and hex needs no quoting in the configuration file.
+				secret="$(head -c 32 /dev/urandom | md5sum | cut -d' ' -f1)"
+				if [ -z "$secret" ]; then
+					logger -t dae "no api secret and no random source; set dae.main.api_secret by hand"
+					return 1
+				fi
+				uci -q set "$CONFIG.main.api_secret=$secret"
+				uci -q commit "$CONFIG"
+				logger -t dae "generated an api secret; read it with: uci show $CONFIG"
+			fi
+			;;
+	esac
+
+	mkdir -p "$(dirname "$API_FILE")"
+	{
+		echo "api {"
+		echo "  enabled: true"
+		echo "  listen: '$listen'"
+		[ -n "$secret" ] && echo "  secret: '$secret'"
+		[ "$write" = "1" ] && echo "  config_write: true"
+		# The panel is a separate package. Point at it only when it is there.
+		if [ -n "$ui" ] && [ -d "$ui" ]; then
+			echo "  ui: '$ui'"
+		fi
+		echo "}"
+	} > "$API_FILE"
+	chmod 600 "$API_FILE"
+
+	# The managed layout needs the entry file to include the api file.
+	if [ -f /etc/dae/config.dae ] && ! grep -q "api.dae" /etc/dae/config.dae; then
+		logger -t dae "warning: /etc/dae/config.dae does not include api.dae, so the native API stays off"
+	fi
+}
+
+stop_service() {
+	rm -f "$API_FILE"
+}
+
+service_triggers() {
+	procd_add_reload_trigger "$CONFIG"
+}

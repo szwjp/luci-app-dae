@@ -1,0 +1,1 @@
+import{j as a}from"./vendor-react-64fcanlc.js";import{at as s,as as t,dY as r,T as o,dX as e,a7 as n}from"./index-zv_sHU-O.js";function d({at:d}){const i=s[t()],c=r();return a.jsx(o,{text:d?n(d,i):void 0,children:e(d,i,c)})}export{d as T};

@@ -1,0 +1,7 @@
+global {
+  lan_interface: br-lan
+  wan_interface: eth0
+  log_level: info
+  dial_mode: domain
+  sniffing_timeout: 30ms
+}
