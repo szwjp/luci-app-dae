@@ -16,7 +16,7 @@
 
 PKG_NAME:=dae
 PKG_VERSION:=2026.11.01
-PKG_RELEASE:=3
+PKG_RELEASE:=4
 
 PKG_LICENSE:=AGPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>
@@ -35,8 +35,11 @@ PKG_DESCRIPTION:=dae is an eBPF-based transparent proxy for Linux. This build ca
 
 PKG_ARCH:=x86_64
 
-# The prebuilt daemon, staged outside root/ because it goes to /usr/bin.
-PKG_ASSETS:=assets/x86_64/dae=usr/bin/dae
+# The prebuilt daemon, staged outside root/ because it goes to /usr/bin. The
+# path is architecture neutral: the CI puts the daemon of the architecture it
+# builds into assets/<arch>/dae and points the packaging script at that
+# directory, so the same Makefile serves every architecture.
+PKG_ASSETS:=assets/dae=usr/bin/dae
 
 # The files that survive an upgrade untouched.
 PKG_CONFFILES:=/etc/config/dae /etc/dae/config.dae /etc/dae/config.d/global.dae /etc/dae/config.d/routing.dae /etc/dae/config.d/dns.dae /etc/dae/config.d/node.dae /etc/dae/config.d/group.dae /etc/dae/config.d/subscription.dae
