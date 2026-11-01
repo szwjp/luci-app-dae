@@ -242,9 +242,9 @@ jobs:
           fi
           gh release create "$TAG" release/*.apk \
             --title "dae + doona panel $TAG" \
-            --notes "dae engine with the native HTTP API and the doona web panel.
+            --notes "dae 引擎（原生 HTTP 控制面）+ doona 面板。
 
-          Install on OpenWrt/ImmortalWrt (apk):
+          在 OpenWrt / ImmortalWrt 上安装（apk）：
 
           \`\`\`sh
           apk add --allow-untrusted \\
@@ -252,8 +252,15 @@ jobs:
             https://github.com/szwjp/luci-app-dae/releases/download/$TAG/luci-app-dae-*.apk
           \`\`\`
 
-          Pick the daemon that matches the device: x86_64, arm64 (aarch64_generic)
-          or riscv64 (riscv64_generic).
+          守护进程按架构分发：x86_64、arm64（aarch64_generic）、riscv64（riscv64_generic），
+          按设备选对应的一个；面板包与翻译包是 noarch。
 
-          The service is disabled by default; enable it with
-          \`uci set dae.main.enabled=1 && uci commit dae && /etc/init.d/dae start\`."
+          可选的 LuCI 中文翻译：
+
+          \`\`\`sh
+          apk add --allow-untrusted \\
+            https://github.com/szwjp/luci-app-dae/releases/download/$TAG/luci-i18n-dae-zh-cn-*.apk
+          \`\`\`
+
+          服务默认禁用；启用方式：
+          \`uci set dae.main.enabled=1 && uci commit dae && /etc/init.d/dae start\`"
