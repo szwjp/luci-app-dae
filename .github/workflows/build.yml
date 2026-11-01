@@ -143,8 +143,10 @@ jobs:
           set -euo pipefail
           fakeroot bash .github/build-pkg.sh dae
           # The panel is the same on every architecture, so one leg builds it.
+          # Its assets live in the package directory and it is architecture
+          # independent, so neither of the daemon's overrides applies to it.
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            fakeroot bash .github/build-pkg.sh luci-app-dae
+            PKG_ASSET_DIR= PKG_ARCH_OVERRIDE= fakeroot bash .github/build-pkg.sh luci-app-dae
           fi
           shopt -s nullglob
           apks=(out/*.apk)
