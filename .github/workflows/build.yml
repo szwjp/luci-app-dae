@@ -1,0 +1,181 @@
+name: Build
+
+# Two trigger paths, both of which build and publish:
+#   - workflow_dispatch: manual run from the Actions tab. The version comes
+#     from the Makefile, so there is nothing to keep in sync by hand.
+#   - push of a v* tag: same build, plus the tag is required to agree with
+#     the Makefile version, so a mistyped tag cannot publish a mismatched
+#     release.
+#
+# The packages are built with apk-tools directly, not with an OpenWrt SDK:
+# .github/build-pkg.sh assembles the staging tree and apk mkpkg writes the ADB
+# container. Only the .apk files are published.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  APK_TOOLS_REF: 'b5a31c0d865342ad80be10d68f1bb3d3ad9b0866'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Cache apk-tools binary
+        id: cache-apk-tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: /usr/local/bin/apk
+          key: apk-tools-${{ env.APK_TOOLS_REF }}-${{ runner.os }}
+
+      - name: Checkout apk-tools
+        if: steps.cache-apk-tools.outputs.cache-hit != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: 'alpinelinux/apk-tools'
+          path: 'apk-tools'
+          fetch-depth: 0
+          ref: ${{ env.APK_TOOLS_REF }}
+
+      - name: Setup dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y build-essential curl fakeroot libssl-dev meson ninja-build
+
+          if [ "${{ steps.cache-apk-tools.outputs.cache-hit }}" != "true" ]; then
+            pushd apk-tools
+            meson setup build \
+              -Db_lto=true \
+              -Dcompressed-help=false \
+              -Ddocs=disabled \
+              -Dhelp=enabled \
+              -Dlua_version=5.1 \
+              -Ddefault_library=static \
+              -Durl_backend=wget \
+              -Dzstd=false \
+              -Dpython=disabled \
+              -Dtests=disabled \
+              -Dcrypto_backend=openssl
+            ninja -C build
+            sudo -E meson install -C build --strip
+            popd
+          else
+            echo "apk-tools 缓存命中，跳过编译"
+          fi
+
+      - name: Verify toolchain
+        run: |
+          command -v apk >/dev/null || { echo "::error::apk 未正确安装"; exit 1; }
+          apk --version
+
+      - name: Build packages
+        run: |
+          fakeroot bash .github/build-pkg.sh dae
+          fakeroot bash .github/build-pkg.sh luci-app-dae
+          shopt -s nullglob
+          apks=(out/*.apk)
+          if [ "${#apks[@]}" -eq 0 ]; then
+            echo "::error::未生成预期的 apk 文件"
+            exit 1
+          fi
+          printf '生成的包:\n%s\n' "${apks[@]}"
+
+      # apk-tools v3 only reads the ADB container format. Let apk parse every
+      # package here, so a malformed one fails in CI instead of on the device.
+      - name: Validate apk packages (apk-tools v3)
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(out/*.apk)
+          for f in "${apks[@]}"; do
+            echo "== $f"
+            if [ "$(head -c 3 "$f")" != "ADB" ]; then
+              echo "::error::$f 不是 apk v3 (ADB) 格式"
+              exit 1
+            fi
+            apk adbdump "$f" | head -20
+          done
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: luci-app-dae-packages
+          path: out/*.apk
+
+      # ========== 发布（手动触发与 tag push 都会执行）==========
+
+      - name: Derive and validate release version
+        # The version has a single source: the dae package's Makefile. The
+        # panel package carries its own version, so the tag follows the engine.
+        run: |
+          set -euo pipefail
+          MK_V="$(sed -n 's/^PKG_VERSION:=//p' dae/Makefile | head -1)"
+          MK_R="$(sed -n 's/^PKG_RELEASE:=//p' dae/Makefile | head -1)"
+          EXPECTED="${MK_V}-r${MK_R}"
+          if [[ ! "$EXPECTED" =~ ^[0-9][0-9A-Za-z.]*-r[0-9]+$ ]]; then
+            echo "::error::Makefile 版本 $EXPECTED 非法（期望形如 2026.11.01-r3）"
+            exit 1
+          fi
+          # 等位编号：把 -rN 规范为 -rNN，使 GitHub 按 tag 字符串排序时
+          # r02 < r10 < r11，Release 列表保持从大到小。
+          canon() {
+            printf '%s-r%02d' "${1%-r*}" "$((10#${1##*-r}))"
+          }
+          TAG_VERSION="$(canon "$EXPECTED")"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            ON_TAG="${GITHUB_REF_NAME#v}"
+            if [[ ! "$ON_TAG" =~ ^[0-9][0-9A-Za-z.]*-r[0-9]+$ ]]; then
+              echo "::error::tag v$ON_TAG 格式非法（期望形如 v2026.11.01-r03）"
+              exit 1
+            fi
+            if [ "$(canon "$ON_TAG")" != "$TAG_VERSION" ]; then
+              echo "::error::tag v$ON_TAG 与 Makefile 产物版本 $EXPECTED 不一致，拒绝发布"
+              exit 1
+            fi
+          fi
+          echo "VERSION=$EXPECTED" >> "$GITHUB_ENV"
+          echo "TAG_VERSION=$TAG_VERSION" >> "$GITHUB_ENV"
+          echo "发布版本 v$TAG_VERSION（包内版本 $EXPECTED）"
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v${{ env.TAG_VERSION }}"
+          # Replace an existing release with the same tag, so a rerun does not
+          # fail on an already published tag.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes --cleanup-tag
+          fi
+          gh release create "$TAG" out/*.apk \
+            --title "dae + doona panel $TAG" \
+            --notes "dae engine with the native HTTP API and the doona web panel.
+
+          Install on OpenWrt/ImmortalWrt (apk):
+
+          \`\`\`sh
+          apk add --allow-untrusted \\
+            https://github.com/szwjp/luci-app-dae/releases/download/$TAG/dae-${{ env.VERSION }}.apk \\
+            https://github.com/szwjp/luci-app-dae/releases/download/$TAG/luci-app-dae-*.apk
+          \`\`\`
+
+          The service is disabled by default; enable it with
+          \`uci set dae.main.enabled=1 && uci commit dae && /etc/init.d/dae start\`."

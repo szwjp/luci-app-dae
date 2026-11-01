@@ -1,0 +1,13 @@
+{
+	"admin/services/dae": {
+		"title": "dae",
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "dae/panel"
+		},
+		"depends": {
+			"acl": [ "luci-app-dae" ]
+		}
+	}
+}

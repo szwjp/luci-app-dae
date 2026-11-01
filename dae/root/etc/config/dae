@@ -1,0 +1,8 @@
+config dae 'main'
+	option enabled '0'
+	option config_file '/etc/dae/config.dae'
+	option api_listen '0.0.0.0:9527'
+	option api_secret ''
+	option api_write '0'
+	option ui_path '/usr/share/dae/doona'
+	option log_level 'info'

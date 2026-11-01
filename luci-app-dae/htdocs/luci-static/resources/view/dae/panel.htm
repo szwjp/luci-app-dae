@@ -1,0 +1,55 @@
+<%
+local port = 9527
+local fs = require "fs"
+local sys = require "sys"
+local uci = require "uci"
+
+local cursor = uci.cursor("dae")
+local listen = cursor:get("dae", "main", "api_listen")
+if listen and listen ~= "" then
+	local host, sep, p = listen:match("^(.-):(%d+)$")
+	if sep and p then
+		port = tonumber(p)
+	end
+end
+-%>
+<%+header%>
+
+<style type="text/css">
+	.dae-panel-frame {
+		width: 100%;
+		height: calc(100vh - 190px);
+		min-height: 560px;
+		border: 0;
+		border-radius: 4px;
+		background: #1c1c1c;
+	}
+	.dae-panel-note {
+		margin: 0 0 10px 0;
+		color: #888;
+		font-size: 90%;
+	}
+</style>
+
+<h2 name="content"><%:dae Engine%></h2>
+<div class="cbi-map-descr">
+	<%:The doona panel serves the dae engine over its native HTTP API. It runs in the browser, so this page only frames it.%>
+</div>
+
+<p class="dae-panel-note">
+	<%:The panel asks for the API secret on first use. Read it with: uci get dae.main.api_secret%>
+</p>
+
+<iframe class="dae-panel-frame" id="dae-panel-frame" title="dae panel"
+	data-port="<%=port%>"
+	src="about:blank"></iframe>
+
+<script type="text/javascript">//<![CDATA[
+	(function () {
+		var frame = document.getElementById('dae-panel-frame');
+		var port = frame.getAttribute('data-port') || '9527';
+		frame.src = window.location.protocol + '//' + window.location.hostname + ':' + port + '/ui/';
+	})();
+//]]></script>
+
+<%+footer%>
