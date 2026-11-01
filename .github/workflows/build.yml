@@ -29,7 +29,7 @@ permissions:
 env:
   APK_TOOLS_REF: 'b5a31c0d865342ad80be10d68f1bb3d3ad9b0866'
   # The release of szwjp/dae that carries the daemon. It must hold the
-  # linux-x86_64, linux-arm64 and linux-riscv64 archives.
+  # linux-x86_64, linux-arm64 and linux-riscv64_rva23u64 archives.
   DAE_BINARY_TAG: 'v2026.11.01-nativeapi-r3'
 
 jobs:
@@ -47,7 +47,9 @@ jobs:
             dae_asset: linux-arm64
           - arch: riscv64
             apk_arch: riscv64_generic
-            dae_asset: linux-riscv64
+            # The engine release publishes the riscv64 leg under its profile
+            # name; GitHub runs one riscv64 job, so rva23u64 is the only one.
+            dae_asset: linux-riscv64_rva23u64
     steps:
       - name: Checkout source tree
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
