@@ -20,21 +20,21 @@
 
 | 设备架构 | 包 |
 |---|---|
-| x86_64 | `dae-2026.11.01-r5-x86_64.apk` |
-| arm64 | `dae-2026.11.01-r5-aarch64_generic.apk` |
-| riscv64 | `dae-2026.11.01-r5-riscv64_generic.apk` |
+| x86_64 | `dae-2026.11.01-r7-x86_64.apk` |
+| arm64 | `dae-2026.11.01-r7-aarch64_generic.apk` |
+| riscv64 | `dae-2026.11.01-r7-riscv64_generic.apk` |
 
 ```sh
 apk add --allow-untrusted \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r05/dae-2026.11.01-r5-x86_64.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r05/luci-app-dae-2026.11.01-r2.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r07/dae-2026.11.01-r7-x86_64.apk \
+  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r07/luci-app-dae-2026.11.01-r4.apk
 ```
 
 可选的 LuCI 翻译包（界面语言随浏览器 `Accept-Language` 走）：
 
 ```sh
 apk add --allow-untrusted \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r05/luci-i18n-dae-zh-cn-2026.11.01-r2.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r07/luci-i18n-dae-zh-cn-2026.11.01-r4.apk
 ```
 
 服务**默认禁用**。先按设备改好配置再启用：`/etc/dae/config.dae` 是入口文件，模块放在
