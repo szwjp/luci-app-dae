@@ -128,7 +128,9 @@ jobs:
           url="https://github.com/szwjp/dae/releases/download/${DAE_BINARY_TAG}/dae-${DAE_ASSET}.tar.xz"
           echo "取 $url"
           curl -fsSL --retry 3 -o dae.tar.xz "$url"
-          tar -xJf dae.tar.xz usr/bin/dae
+          # The archive stores its members with a "./" prefix, so extract it
+          # whole and take the daemon from the extracted tree.
+          tar -xJf dae.tar.xz
           mkdir -p "dae/assets/${{ matrix.arch }}"
           install -m0755 usr/bin/dae "dae/assets/${{ matrix.arch }}/dae"
           file "dae/assets/${{ matrix.arch }}/dae"
