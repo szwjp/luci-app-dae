@@ -9,6 +9,7 @@
 #   Makefile    the metadata (name, version, deps, conffiles, assets)
 #   root/       files that go to /                 (optional)
 #   htdocs/     LuCI resources that go to /www    (optional)
+#   views/      LuCI views that go to /usr/lib/lua/luci/view  (optional)
 #   assets/     files that go somewhere else, listed in the Makefile
 #
 # Usage: build-pkg.sh <package-dir> [<output-dir>]
@@ -142,6 +143,13 @@ fi
 if [ -d "$PKG_DIR/htdocs" ] && [ -n "$(ls -A "$PKG_DIR/htdocs" 2>/dev/null)" ]; then
 	mkdir -p "$STAGE/www"
 	cp -a "$PKG_DIR/htdocs/." "$STAGE/www/"
+fi
+# LuCI views are not static files: the server looks them up in its view
+# directory (/usr/lib/lua/luci/view) and compiles the .htm into a class on
+# request, so a view under /www is never found (404 on the .js URL).
+if [ -d "$PKG_DIR/views" ] && [ -n "$(ls -A "$PKG_DIR/views" 2>/dev/null)" ]; then
+	mkdir -p "$STAGE/usr/lib/lua/luci/view"
+	cp -a "$PKG_DIR/views/." "$STAGE/usr/lib/lua/luci/view/"
 fi
 if [ -n "$ASSETS" ]; then
 	# The asset directory follows the architecture when the workflow builds
