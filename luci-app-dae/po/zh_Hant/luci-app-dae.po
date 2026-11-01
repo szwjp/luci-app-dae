@@ -1,0 +1,18 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "dae Engine"
+msgstr "dae 引擎"
+
+msgid ""
+"The doona panel serves the dae engine over its native HTTP API. It runs in "
+"the browser, so this page only frames it."
+msgstr ""
+"doona 面板透過 dae 的原生 HTTP API 驅動引擎。它在瀏覽器裡執行，本頁只是把它框起來。"
+
+msgid ""
+"The panel asks for the API secret on first use. Read it with: uci get "
+"dae.main.api_secret"
+msgstr ""
+"面板首次開啟時會要求輸入 API 金鑰。查看方式：uci get dae.main.api_secret"

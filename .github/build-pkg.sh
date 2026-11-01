@@ -88,6 +88,9 @@ PKG_NAME="$(get_mk_value "PKG_NAME")"
 PKG_VERSION="$(get_mk_value "PKG_VERSION")"
 PKG_RELEASE="$(get_mk_value "PKG_RELEASE")"
 PKG_ARCH="$(get_mk_value "PKG_ARCH")"
+# The workflow builds one package per architecture and overrides the value
+# from the Makefile.
+[ -n "${PKG_ARCH_OVERRIDE:-}" ] && PKG_ARCH="$PKG_ARCH_OVERRIDE"
 PKG_LICENSE="$(get_mk_value "PKG_LICENSE")"
 PKG_MAINTAINER="$(get_mk_value "PKG_MAINTAINER")"
 PKG_URL="$(get_mk_value "PKG_URL")"
@@ -107,6 +110,23 @@ ASSETS="$(get_mk_value "PKG_ASSETS")"
 
 CONFFILES="$(get_mk_list "PKG_CONFFILES")"
 
+# The LuCI translations live in po/<locale>/<package>.po and become separate
+# packages, named the way LuCI looks them up: luci-i18n-<app>-<locale>, with
+# the .lmo file named after the app without the luci-app- prefix.
+APP_ID="${PKG_NAME#luci-app-}"
+locale_for() {
+	case "$1" in
+		zh_Hans) echo "zh-cn" ;;
+		zh_Hant) echo "zh-tw" ;;
+		*) echo "$(echo "$1" | tr '[:upper:]_' '[:lower:]-')" ;;
+	esac
+}
+
+# A package that is not architecture independent carries the architecture in
+# its file name, the way the OpenWrt feeds name their packages.
+OUT_NAME="${PKG_NAME}-${VERSION}"
+[ "$PKG_ARCH" = "noarch" ] || OUT_NAME="${OUT_NAME}-${PKG_ARCH}"
+
 echo "Building $PKG_NAME $VERSION (arch=$PKG_ARCH)"
 [ -n "$DEPENDS" ] && echo "  depends: $DEPENDS"
 
@@ -124,8 +144,12 @@ if [ -d "$PKG_DIR/htdocs" ] && [ -n "$(ls -A "$PKG_DIR/htdocs" 2>/dev/null)" ]; 
 	cp -a "$PKG_DIR/htdocs/." "$STAGE/www/"
 fi
 if [ -n "$ASSETS" ]; then
+	# The asset directory follows the architecture when the workflow builds
+	# several of them from one tree.
+	ASSET_ROOT="${PKG_ASSET_DIR:-assets}"
 	for pair in $ASSETS; do
 		src="${pair%%=*}"
+		src="$ASSET_ROOT/${src#assets/}"
 		dst="${pair#*=}"
 		[ -e "$PKG_DIR/$src" ] || { echo "error: asset $src missing in $PKG_DIR" >&2; exit 1; }
 		mkdir -p "$STAGE/$(dirname "$dst")"
@@ -199,6 +223,51 @@ apk mkpkg \
 	--script "post-install:$TEMP_DIR/post-install" \
 	--script "pre-deinstall:$TEMP_DIR/pre-deinstall" \
 	--files "$STAGE" \
-	--output "$OUT_DIR/${PKG_NAME}-${VERSION}.apk"
+	--output "$OUT_DIR/${OUT_NAME}.apk"
 
-echo "  -> $OUT_DIR/${PKG_NAME}-${VERSION}.apk"
+echo "  -> $OUT_DIR/${OUT_NAME}.apk"
+
+# ---- the translations -------------------------------------------------------
+if [ -d "$PKG_DIR/po" ]; then
+	for podir in "$PKG_DIR"/po/*/; do
+		[ -d "$podir" ] || continue
+		lang_dir="$(basename "$podir")"
+		pofile="$podir$PKG_NAME.po"
+		[ -f "$pofile" ] || pofile="$podir$APP_ID.po"
+		[ -f "$pofile" ] || continue
+
+		locale="$(locale_for "$lang_dir")"
+		lmo_name="$APP_ID.$locale.lmo"
+
+		if ! command -v po2lmo >/dev/null 2>&1; then
+			echo "error: po2lmo is not installed; the $lang_dir translation needs it" >&2
+			exit 1
+		fi
+		po2lmo "$pofile" "$TEMP_DIR/$lmo_name"
+
+		i18n_name="luci-i18n-${APP_ID}-${locale}"
+		i18n_dir="$TEMP_DIR/$i18n_name"
+		mkdir -p "$i18n_dir/usr/lib/lua/luci/i18n/"
+		mkdir -p "$i18n_dir/lib/apk/packages/"
+		cp "$TEMP_DIR/$lmo_name" "$i18n_dir/usr/lib/lua/luci/i18n/"
+
+		(cd "$i18n_dir" && find . -type f,l | sed 's|^\./||' | sed 's|^|/|' | sort) > "$TEMP_DIR/$i18n_name.list"
+		mv "$TEMP_DIR/$i18n_name.list" "$i18n_dir/lib/apk/packages/$i18n_name.list"
+
+		apk mkpkg \
+			--info "name:$i18n_name" \
+			--info "version:$VERSION" \
+			--info "description:$PKG_DESCRIPTION ($locale translation)" \
+			--info "arch:noarch" \
+			--info "origin:$PKG_NAME" \
+			--info "maintainer:${PKG_MAINTAINER:-unspecified}" \
+			--info "depends:$PKG_NAME" \
+			--files "$i18n_dir" \
+			--output "$OUT_DIR/${i18n_name}-${VERSION}.apk"
+
+		echo "  -> $OUT_DIR/${i18n_name}-${VERSION}.apk"
+	done
+else
+	echo "note: no po/ directory -- skipping the translation packages"
+fi
+
