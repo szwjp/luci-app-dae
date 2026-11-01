@@ -56,7 +56,7 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo -E apt-get update -qq
-          sudo -E apt-get install -y build-essential curl fakeroot libssl-dev meson ninja-build
+          sudo -E apt-get install -y build-essential curl fakeroot libssl-dev lua5.1 meson ninja-build
 
           if [ "${{ steps.cache-apk-tools.outputs.cache-hit }}" != "true" ]; then
             pushd apk-tools
