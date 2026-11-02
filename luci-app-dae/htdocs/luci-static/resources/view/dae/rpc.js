@@ -4,15 +4,36 @@
 'require baseclass';
 'require rpc';
 
-const callStatus = rpc.declare({ object: 'dae', method: 'status', expect: { '': {} } });
-const callSecret = rpc.declare({ object: 'dae', method: 'secret', expect: { '': {} } });
-const callStart = rpc.declare({ object: 'dae', method: 'start', expect: { '': {} } });
-const callStop = rpc.declare({ object: 'dae', method: 'stop', expect: { '': {} } });
-const callRestart = rpc.declare({ object: 'dae', method: 'restart', expect: { '': {} } });
-const callEnable = rpc.declare({ object: 'dae', method: 'enable', expect: { '': {} } });
-const callDisable = rpc.declare({ object: 'dae', method: 'disable', expect: { '': {} } });
+/*
+ * "reject: true" makes a failing ubus call raise instead of resolving with
+ * an empty object: LuCI replaces a reply that does not match the "expect"
+ * shape with a bare "{}", so without it a backend that is not registered
+ * looks like a service that is merely disabled.
+ */
+const callStatus = rpc.declare({ object: 'dae', method: 'status', expect: { '': {} }, reject: true });
+const callSecret = rpc.declare({ object: 'dae', method: 'secret', expect: { '': {} }, reject: true });
+const callStart = rpc.declare({ object: 'dae', method: 'start', expect: { '': {} }, reject: true });
+const callStop = rpc.declare({ object: 'dae', method: 'stop', expect: { '': {} }, reject: true });
+const callRestart = rpc.declare({ object: 'dae', method: 'restart', expect: { '': {} }, reject: true });
+const callEnable = rpc.declare({ object: 'dae', method: 'enable', expect: { '': {} }, reject: true });
+const callDisable = rpc.declare({ object: 'dae', method: 'disable', expect: { '': {} }, reject: true });
+const callSetListen = rpc.declare({
+	object: 'dae',
+	method: 'set_listen',
+	params: [ 'address', 'port' ],
+	expect: { '': {} },
+	reject: true
+});
 
 let pageStylesInstalled = false;
+
+/*
+ * The browser keeps a stylesheet in its cache, so a page that is opened
+ * after the package was upgraded would still use the stylesheet of the
+ * older version. The version on the URL makes it fetch the current one.
+ * It has to be raised whenever dae.css changes.
+ */
+const STYLE_VERSION = '20261102';
 
 function installStyles() {
 	if (pageStylesInstalled || document.getElementById('dae-page-styles'))
@@ -21,7 +42,7 @@ function installStyles() {
 	const stylesheet = document.createElement('link');
 	stylesheet.id = 'dae-page-styles';
 	stylesheet.rel = 'stylesheet';
-	stylesheet.href = L.resource('view/dae/dae.css');
+	stylesheet.href = L.resource('view/dae/dae.css', '?v=' + STYLE_VERSION);
 	document.head.appendChild(stylesheet);
 	pageStylesInstalled = true;
 }
@@ -71,6 +92,25 @@ function listenHost(listen) {
 	const value = String(listen || '');
 	const cut = value.lastIndexOf(':');
 	return cut < 0 ? '' : value.slice(0, cut);
+}
+
+/*
+ * The listener address as the two parts the page edits: the host and the
+ * port. The brackets of an IPv6 literal are dropped, because the field that
+ * holds the address takes the bare address and the backend adds the brackets
+ * back.
+ */
+function splitListen(listen) {
+	const value = String(listen || '');
+	const cut = value.lastIndexOf(':');
+
+	if (cut < 0)
+		return { address: value, port: '' };
+
+	return {
+		address: value.slice(0, cut).replace(/^\[|\]$/g, ''),
+		port: value.slice(cut + 1)
+	};
 }
 
 /*
@@ -138,6 +178,11 @@ function statusIssue(token) {
 		stop_failed: _('The dae service did not stop. Check the system log.'),
 		restart_failed: _('The dae service did not restart. Check the system log.'),
 		enable_failed: _('The dae service was not enabled. Check the system log.'),
+		listener_applied: _('The listener address was saved and the service was restarted.'),
+		listener_saved: _('The listener address was saved. It takes effect at the next start.'),
+		listener_invalid: _('The listener address is invalid. Use a numeric address and a port between 1 and 65535.'),
+		invalid_request: _('The request was not understood.'),
+		settings_write_failed: _('The settings could not be written. Check the system log.'),
 		invalid_operation: _('The operation is not known.')
 	};
 
@@ -167,7 +212,9 @@ return baseclass.extend({
 	restart: callRestart,
 	enable: callEnable,
 	disable: callDisable,
+	setListen: callSetListen,
 	panelUrl: panelUrl,
+	splitListen: splitListen,
 	statusIssue: statusIssue,
 	resultMessage: resultMessage,
 	errorMessage: errorMessage,

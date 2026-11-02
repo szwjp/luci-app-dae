@@ -212,7 +212,12 @@ enable() {
 	uci -q commit "$CONFIG"
 	/etc/init.d/dae enable >/dev/null 2>&1
 	/etc/init.d/dae start >/dev/null 2>&1
-	if service_running; then
+
+	# The switch on the LuCI page is the "start at boot" switch, so the
+	# result reports the autostart state. Whether the daemon comes up is a
+	# separate fact, and the status call reports it: the two must not be
+	# mixed up, or a daemon that fails to start hides the autostart change.
+	if boot_enabled; then
 		emit_result true enabled
 	else
 		emit_result false enable_failed
@@ -221,16 +226,88 @@ enable() {
 
 disable() {
 	/etc/init.d/dae disable >/dev/null 2>&1
-	emit_result true disabled
+
+	if boot_enabled; then
+		emit_result false enable_failed
+	else
+		emit_result true disabled_action
+	fi
 }
 
+# The listener address is a UCI value, so the page can change it without the
+# configuration files being edited by hand. The daemon reads the value when
+# it starts, so a running service is restarted to make the new address take
+# effect; a service that is not running picks it up at the next start.
+set_listen() {
+	local request address port listen
+
+	request="$(cat)"
+	json_load "$request" 2>/dev/null || { emit_result false invalid_request; return 1; }
+	json_get_var address address
+	json_get_var port port
+
+	# An IPv6 literal carries colons of its own, so it is bracketed before it
+	# is joined with the port.
+	case "$address" in
+		''|*[!0-9a-fA-F:.]*) emit_result false listener_invalid; return 1 ;;
+		*:*)
+			case "$address" in
+				\[*\]*) ;;
+				*) address="[$address]" ;;
+			esac
+			;;
+	esac
+
+	listen="$address:$port"
+	if ! valid_listen "$listen"; then
+		emit_result false listener_invalid
+		return 1
+	fi
+
+	if ! uci -q set "$CONFIG.main.api_listen=$listen"; then
+		emit_result false settings_write_failed
+		return 1
+	fi
+	if ! uci -q commit "$CONFIG"; then
+		emit_result false settings_write_failed
+		return 1
+	fi
+
+	if service_running; then
+		/etc/init.d/dae restart >/dev/null 2>&1
+		if service_running; then
+			emit_result true listener_applied
+		else
+			emit_result false restart_failed
+		fi
+	else
+		emit_result true listener_saved
+	fi
+}
+
+# rpcd runs an exec backend in a fixed protocol: it asks the script for its
+# methods with the "list" argument and reaches a method with
+# "call <method>". A script that dispatches on the first argument directly
+# gets registered as an object without a single method, and every call from
+# the LuCI page fails with "method not found".
 case "$1" in
-	status) status ;;
-	secret) secret ;;
-	start) start ;;
-	stop) stop ;;
-	restart) restart ;;
-	enable) enable ;;
-	disable) disable ;;
-	*) emit_result false invalid_operation ;;
+list)
+	echo '{"status":{},"secret":{},"start":{},"stop":{},"restart":{},"enable":{},"disable":{},"set_listen":{"address":"String","port":"Integer"}}'
+	;;
+call)
+	case "$2" in
+		status) status ;;
+		secret) secret ;;
+		start) start ;;
+		stop) stop ;;
+		restart) restart ;;
+		enable) enable ;;
+		disable) disable ;;
+		set_listen) set_listen ;;
+		*) emit_result false invalid_operation ;;
+	esac
+	;;
+*)
+	exit 2
+	;;
 esac

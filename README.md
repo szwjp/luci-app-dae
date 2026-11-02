@@ -20,21 +20,21 @@
 
 | 设备架构 | 包 |
 |---|---|
-| x86_64 | `dae-2026.11.01-r8-x86_64.apk` |
-| arm64 | `dae-2026.11.01-r8-aarch64_generic.apk` |
-| riscv64 | `dae-2026.11.01-r8-riscv64_generic.apk` |
+| x86_64 | `dae-2026.11.01-r10-x86_64.apk` |
+| arm64 | `dae-2026.11.01-r10-aarch64_generic.apk` |
+| riscv64 | `dae-2026.11.01-r10-riscv64_generic.apk` |
 
 ```sh
 apk add --allow-untrusted \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r08/dae-2026.11.01-r8-x86_64.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r08/luci-app-dae-2026.11.01-r5.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r10/dae-2026.11.01-r10-x86_64.apk \
+  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r10/luci-app-dae-2026.11.01-r7.apk
 ```
 
 可选的 LuCI 翻译包（界面语言随浏览器 `Accept-Language` 走）：
 
 ```sh
 apk add --allow-untrusted \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r08/luci-i18n-dae-zh-cn-2026.11.01-r5.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r10/luci-i18n-dae-zh-cn-2026.11.01-r7.apk
 ```
 
 服务**默认禁用**。先按设备改好配置再启用：`/etc/dae/config.dae` 是入口文件，模块放在
@@ -64,22 +64,46 @@ uci get dae.main.api_secret
 | `api_secret` | 首次启动自动生成 | API 的 Bearer 令牌 |
 | `api_write` | `0` | 允许面板通过 API 写配置 |
 | `ui_path` | `/usr/share/dae/doona` | 面板所在目录 |
+| `lan_interface` | 空 | 覆盖 LAN 接口名，默认从 `config.d/global.dae` 读取 |
 
 `api_listen` 必须是**数值地址加端口**（`0.0.0.0:9527`、`192.168.1.1:9527`）。
 `localhost` 会被改写成 `127.0.0.1`，其它主机名不接受——dae 自己要求数值地址，
 写成名字时它会拒绝启动。监听回环地址时面板只在本机可用。
 
+### ICMP 重定向
+
+dae 拒绝挂到会发送 ICMP 重定向的接口上，重定向会和 dae 装的规则打架。启动
+脚本会在 dae 运行期间把 `all` 与 LAN 接口的 `send_redirects` 置 0，停止时按启动
+前的值恢复，所以不用手工改 sysctl。LAN 接口名取自 UCI 的 `lan_interface`，没有
+设置时从 `config.d/global.dae` 里读。
+
 ## 面板
 
 * LuCI 入口：*服务 → dae → 面板*。页面显示服务状态、监听地址与 API 密钥，
   并在新标签页里打开面板。
+* 监听地址可以直接在页面上改：填好地址和端口点"应用"，值写入
+  `dae.main.api_listen`，服务随即重启让新地址生效；服务没在跑时只保存，
+  下次启动生效。
 * 直接访问：`http://<路由器地址>:9527/ui/`。
+
+LuCI 页面通过 rpcd 的 exec 后端读取状态。软件包安装后会自动 reload rpcd；
+如果页面报"读取 dae 服务状态失败"，说明后端没被注册，执行
+`/etc/init.d/rpcd reload` 即可。
 
 面板要改配置需要打开 `api_write`：
 
 ```sh
 uci set dae.main.api_write=1 && uci commit dae && /etc/init.d/dae restart
 ```
+
+### 启动项页面
+
+服务在 LuCI 的*系统 → 启动项*里以 `99 dae` 出现，页面上的启用/禁用按钮就是
+开机自启开关。
+
+rpcd 读取 init 脚本时只看开头若干行里的 `USE_PROCD`、`START`、`STOP`，
+所以这三行必须留在脚本的前 11 行内。写在后面的话，脚本不会出现在启动项
+列表里，开机自启状态也会被报成未启用。
 
 ## 架构
 
