@@ -7,7 +7,7 @@
 | 包 | 内容 |
 |---|---|
 | `dae` | 守护进程，来自 [szwjp/dae](https://github.com/szwjp/dae) fork（分支 `feat/dae-native-api`），带 native HTTP 控制面，以及针对 [daeuniverse/api-standardize](https://github.com/daeuniverse/api-standardize) 契约的三处修复。 |
-| `luci-app-dae` | doona 面板，来自 [szwjp/doona](https://github.com/szwjp/doona) fork（分支 `feat/dae-native-api`），含 dae 引擎适配器；LuCI 页面显示服务状态并打开面板。 |
+| `luci-app-dae` | doona 面板，来自 [szwjp/doona](https://github.com/szwjp/doona) fork（分支 `main`），含 dae 引擎适配器与上游面板更新；LuCI 页面显示服务状态并打开面板。 |
 | `luci-i18n-dae-zh-cn` / `luci-i18n-dae-zh-tw` | LuCI 页面的简体中文 / 繁体中文翻译。 |
 
 面板通过契约与 dae 通信，同一套面板既能驱动 dae 也能驱动 honk。面板本身由 dae

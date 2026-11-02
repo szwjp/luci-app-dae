@@ -1,9 +1,9 @@
 #
 # Package metadata for luci-app-dae, the doona web panel for the dae engine.
 #
-# The panel is the doona static build from the szwjp/doona fork (branch
-# feat/dae-native-api), which carries the dae engine adapter. dae serves the
-# panel from its native API listener, so this package installs the assets and
+# The panel is the doona static build from the szwjp/doona fork (branch main),
+# which carries the dae engine adapter and the upstream panel changes. dae serves
+# the panel from its native API listener, so this package installs the assets and
 # the LuCI entry that opens them; the dae package itself does not depend on it.
 #
 # This file is free software, licensed under the GNU General Public License v3
@@ -11,7 +11,7 @@
 
 PKG_NAME:=luci-app-dae
 PKG_VERSION:=2026.11.01
-PKG_RELEASE:=5
+PKG_RELEASE:=6
 
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>

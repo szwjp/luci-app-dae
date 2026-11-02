@@ -16,7 +16,7 @@
 
 PKG_NAME:=dae
 PKG_VERSION:=2026.11.01
-PKG_RELEASE:=8
+PKG_RELEASE:=9
 
 PKG_LICENSE:=AGPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>
