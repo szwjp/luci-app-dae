@@ -68,9 +68,6 @@ msgstr "开机自启"
 msgid "Configuration write"
 msgstr "允许写入配置"
 
-msgid "Enabled"
-msgstr "已开启"
-
 msgid "Configuration write lets the panel save changes to the dae configuration files."
 msgstr "开启后，面板可以通过 API 把改动写回 dae 的配置文件。"
 
@@ -161,9 +158,6 @@ msgstr "后端没有确认这次操作。"
 msgid "Apply"
 msgstr "应用"
 
-msgid "The listener address is written to the configuration and the service is restarted to make it take effect."
-msgstr "监听地址会写入配置，并重启服务使其生效。"
-
 msgid "The listener address was saved and the service was restarted."
 msgstr "监听地址已保存，服务已重启。"
 
@@ -178,3 +172,18 @@ msgstr "无法识别的请求。"
 
 msgid "The settings could not be written. Check the system log."
 msgstr "配置写入失败，请查看系统日志。"
+
+msgid "Hide"
+msgstr "隐藏"
+
+msgid "The configuration write permission was saved and the service was restarted."
+msgstr "配置写入权限已保存，服务已重启。"
+
+msgid "The configuration write permission was saved. It takes effect at the next start."
+msgstr "配置写入权限已保存，下次启动后生效。"
+
+msgid "The value is not valid."
+msgstr "该值无效。"
+
+msgid "The secret could not be written to the clipboard. It is shown instead."
+msgstr "密钥没能写入剪贴板,已改为直接显示。"

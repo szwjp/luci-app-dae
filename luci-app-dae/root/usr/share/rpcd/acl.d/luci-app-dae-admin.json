@@ -9,7 +9,7 @@
 		},
 		"write": {
 			"ubus": {
-				"dae": [ "start", "stop", "restart", "enable", "disable", "set_listen" ]
+				"dae": [ "start", "stop", "restart", "enable", "disable", "set_listen", "set_api_write" ]
 			}
 		}
 	}

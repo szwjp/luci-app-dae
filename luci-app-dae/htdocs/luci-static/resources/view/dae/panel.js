@@ -50,102 +50,105 @@ return view.extend({
 
 		// The listener address is edited in place. The page polls every few
 		// seconds, so the edit that is not applied yet is kept aside: the
-		// poll must not wipe it, and it must not take the focus away from
-		// the field that is being typed in.
+		// poll must not wipe it.
 		let listenerDraft = null;
 		let listenerEditor = null;
 
-		function renderStatus(status, error) {
-			while (statusArea.firstChild)
-				statusArea.removeChild(statusArea.firstChild);
+		/*
+		 * The page is built once and then updated in place. A poll that
+		 * rebuilds the whole area every few seconds takes the elements away
+		 * from under a click, and a switch or a button that silently does
+		 * nothing is worse than one that answers a moment late.
+		 */
+		const ui = {};
 
-			if (error) {
-				statusArea.appendChild(E('div', { 'class': 'alert-message' },
-					_('Could not read the dae service state.')));
-				statusArea.appendChild(E('p', { 'class': 'dae-note' },
-					_('If luci-app-dae was installed just now, restart rpcd so that its backend is registered.')));
-				return;
-			}
+		function build() {
+			ui.errorAlert = E('div', { 'class': 'alert-message' },
+				_('Could not read the dae service state.'));
+			ui.errorNote = E('p', { 'class': 'dae-note' },
+				_('If luci-app-dae was installed just now, restart rpcd so that its backend is registered.'));
 
-			// A reply without the expected fields is a backend that did not
-			// answer, not a service that is switched off: showing it as
-			// "disabled" would hide the real problem.
-			if (!status || typeof status !== 'object' || typeof status.listen !== 'string') {
-				statusArea.appendChild(E('div', { 'class': 'alert-message' },
-					_('Could not read the dae service state.')));
-				statusArea.appendChild(E('p', { 'class': 'dae-note' },
-					_('If luci-app-dae was installed just now, restart rpcd so that its backend is registered.')));
-				return;
-			}
+			ui.badge = E('span', { 'class': 'dae-badge dae-badge--stop' }, _('Disabled'));
 
-			currentStatus = status;
-
-			const running = status.running === true;
-			const enabled = status.enabled === true;
-			const badge = E('span', {
-				'class': 'dae-badge %s'.format(running ? 'dae-badge--run' : (enabled ? 'dae-badge--idle' : 'dae-badge--stop'))
-			}, running ? _('Running') : (enabled ? _('Stopped') : _('Disabled')));
-
-			const url = dae.panelUrl(status);
-			const openPanel = E(url ? 'a' : 'button', {
+			ui.openPanel = E('a', {
 				'class': 'cbi-button cbi-button-action',
-				'href': url || null,
-				'target': url ? '_blank' : null,
-				'rel': url ? 'noopener noreferrer' : null,
-				'type': url ? null : 'button',
-				'disabled': url ? null : true
+				'href': null,
+				'target': '_blank',
+				'rel': 'noopener noreferrer'
 			}, _('Open panel'));
 
-			const toggle = E('button', {
+			ui.toggle = E('button', {
 				'class': 'cbi-button cbi-button-action',
 				'type': 'button',
-				'data-action': running ? 'stop' : 'start'
-			}, running ? _('Stop') : _('Start'));
-			toggle.disabled = busy || !enabled;
+				'data-action': 'start'
+			}, _('Start'));
+			ui.toggle.addEventListener('click', function() {
+				runAction(ui.toggle.getAttribute('data-action'));
+			});
 
-			const restart = E('button', { 'class': 'cbi-button', 'type': 'button', 'data-action': 'restart' },
-				_('Restart'));
-			restart.disabled = busy || !enabled;
+			ui.restart = E('button', {
+				'class': 'cbi-button',
+				'type': 'button',
+				'data-action': 'restart'
+			}, _('Restart'));
+			ui.restart.addEventListener('click', function() {
+				runAction('restart');
+			});
 
-			const actions = [ openPanel, toggle ];
-			if (running)
-				actions.push(restart);
-
-			const statusCard = E('section', { 'class': 'dae-card' }, [
+			ui.statusCard = E('section', { 'class': 'dae-card' }, [
 				E('div', { 'class': 'dae-card-head' }, [
 					E('div', {}, [
 						E('h3', { 'class': 'dae-card-title' }, _('Status')),
-						badge
+						ui.badge
 					]),
-					E('div', { 'class': 'dae-actions' }, actions)
+					E('div', { 'class': 'dae-actions' }, [ ui.openPanel, ui.toggle, ui.restart ])
 				]),
 				E('div', { 'class': 'dae-meta' }, [
 					metaItem(_('Listener'), listenerEditorNode())
 				])
 			]);
 
-			if (!url) {
-				let reason;
-				if (!enabled)
-					reason = _('The dae service is disabled.');
-				else if (!running)
-					reason = _('The dae service is not running.');
-				else if (status.panel_available === false)
-					reason = _('The panel files are missing. Reinstall the luci-app-dae package.');
-				else
-					reason = _('The panel is not reachable from this browser.');
-				statusCard.appendChild(E('p', { 'class': 'dae-note', 'role': 'status' }, reason));
-			}
+			ui.reason = E('p', { 'class': 'dae-note', 'role': 'status' }, '');
+			ui.errors = E('ul', { 'class': 'alert-message' });
+			ui.statusCard.appendChild(ui.reason);
+			ui.statusCard.appendChild(ui.errors);
 
-			const errors = (Array.isArray(status.errors) ? status.errors : [])
-				.filter(function(token) { return token !== 'disabled'; });
-			if (errors.length)
-				statusCard.appendChild(E('ul', { 'class': 'alert-message' },
-					errors.map(function(token) { return E('li', {}, dae.statusIssue(token)); })));
+			ui.boot = E('input', { 'type': 'checkbox', 'name': 'boot_enabled', 'id': 'dae-boot-enabled' });
+			ui.boot.addEventListener('change', function() {
+				runAction(ui.boot.checked ? 'enable' : 'disable');
+			});
 
-			statusArea.appendChild(statusCard);
-			statusArea.appendChild(renderDetails(status));
-			statusArea.appendChild(renderSecret(status));
+			// The permission to write the configuration files is read by the
+			// daemon when it starts, so the switch reaches the core through
+			// a restart of the service.
+			ui.apiWrite = E('input', { 'type': 'checkbox', 'name': 'api_write', 'id': 'dae-api-write' });
+			ui.apiWrite.addEventListener('change', function() {
+				setApiWrite(ui.apiWrite.checked);
+			});
+
+			ui.serviceCard = E('section', { 'class': 'dae-card' }, [
+				E('h3', { 'class': 'dae-card-title' }, _('Service')),
+				field(_('Start at boot'), ui.boot),
+				field(_('Configuration write'), ui.apiWrite),
+				E('p', { 'class': 'dae-note' },
+					_('Configuration write lets the panel save changes to the dae configuration files.'))
+			]);
+
+			ui.secretValue = E('code', { 'class': 'dae-secret' }, _('Loading…'));
+			ui.secretShow = E('button', { 'class': 'cbi-button', 'type': 'button' }, _('Show'));
+			ui.secretCopy = E('button', { 'class': 'cbi-button', 'type': 'button', 'disabled': true }, _('Copy'));
+			ui.secretCard = E('section', { 'class': 'dae-card' }, [
+				E('h3', { 'class': 'dae-card-title' }, _('API secret')),
+				E('div', { 'class': 'dae-secret-row' }, [ ui.secretValue, ui.secretShow, ui.secretCopy ]),
+				E('p', { 'class': 'dae-note' },
+					_('The panel asks for this secret the first time it is opened. It is also readable with: uci get dae.main.api_secret'))
+			]);
+
+			statusArea.appendChild(ui.errorAlert);
+			statusArea.appendChild(ui.errorNote);
+			statusArea.appendChild(ui.statusCard);
+			statusArea.appendChild(ui.serviceCard);
+			statusArea.appendChild(ui.secretCard);
 		}
 
 		/*
@@ -158,17 +161,6 @@ return view.extend({
 			if (!listenerEditor)
 				createListenerEditor();
 
-			const parts = dae.splitListen(currentStatus ? currentStatus.listen : '');
-			const active = document.activeElement;
-
-			if (!listenerDraft && active !== listenerEditor.address && active !== listenerEditor.port) {
-				if (listenerEditor.address.value !== parts.address)
-					listenerEditor.address.value = parts.address;
-				if (listenerEditor.port.value !== parts.port)
-					listenerEditor.port.value = parts.port;
-			}
-
-			listenerEditor.apply.disabled = busy;
 			return listenerEditor.node;
 		}
 
@@ -192,19 +184,7 @@ return view.extend({
 					return;
 				}
 
-				busy = true;
-				actionMessage.textContent = _('Working…');
-				renderStatus(currentStatus, null);
-
-				dae.setListen(addressValue, portValue).then(dae.ensureOk).then(function(result) {
-					listenerDraft = null;
-					actionMessage.textContent = dae.resultMessage(result, _('The operation completed.'));
-				}).catch(function(error) {
-					actionMessage.textContent = dae.errorMessage(error, _('The operation failed.'));
-				}).finally(function() {
-					busy = false;
-					refresh();
-				});
+				runAction('set_listen', [ addressValue, portValue ]);
 			});
 
 			listenerEditor = {
@@ -220,79 +200,175 @@ return view.extend({
 			};
 		}
 
-		function editorFocused() {
+		function syncListenerEditor(status) {
 			if (!listenerEditor)
-				return false;
+				return;
 
+			const parts = dae.splitListen(status.listen);
 			const active = document.activeElement;
-			return active === listenerEditor.address || active === listenerEditor.port;
+
+			if (!listenerDraft && active !== listenerEditor.address && active !== listenerEditor.port) {
+				if (listenerEditor.address.value !== parts.address)
+					listenerEditor.address.value = parts.address;
+				if (listenerEditor.port.value !== parts.port)
+					listenerEditor.port.value = parts.port;
+			}
+
+			listenerEditor.apply.disabled = busy;
 		}
 
-		function renderDetails(status) {
-			const card = E('section', { 'class': 'dae-card' });
-			const boot = E('input', { 'type': 'checkbox', 'name': 'boot_enabled', 'id': 'dae-boot-enabled' });
-			boot.checked = status.boot_enabled === true;
-			boot.disabled = busy;
-			boot.addEventListener('change', function() {
-				runAction(boot.checked ? 'enable' : 'disable');
+		function update(status, error) {
+			// A reply without the expected fields is a backend that did not
+			// answer, not a service that is switched off: showing it as
+			// "disabled" would hide the real problem.
+			const unreadable = !!error || !status || typeof status !== 'object' || typeof status.listen !== 'string';
+
+			ui.errorAlert.hidden = !unreadable;
+			ui.errorNote.hidden = !unreadable;
+			ui.statusCard.hidden = unreadable;
+			ui.serviceCard.hidden = unreadable;
+
+			if (unreadable)
+				return;
+
+			currentStatus = status;
+
+			const running = status.running === true;
+			const enabled = status.enabled === true;
+
+			ui.badge.className = 'dae-badge %s'.format(running ? 'dae-badge--run' : (enabled ? 'dae-badge--idle' : 'dae-badge--stop'));
+			ui.badge.textContent = running ? _('Running') : (enabled ? _('Stopped') : _('Disabled'));
+
+			const url = dae.panelUrl(status);
+			if (url) {
+				ui.openPanel.setAttribute('href', url);
+				ui.openPanel.setAttribute('target', '_blank');
+				ui.openPanel.setAttribute('rel', 'noopener noreferrer');
+			} else {
+				ui.openPanel.removeAttribute('href');
+			}
+
+			ui.toggle.textContent = running ? _('Stop') : _('Start');
+			ui.toggle.setAttribute('data-action', running ? 'stop' : 'start');
+			ui.toggle.disabled = busy || !enabled;
+			ui.restart.disabled = busy || !enabled;
+			ui.restart.hidden = !running;
+
+			// Why the panel cannot be opened, when it cannot be opened.
+			let reason = '';
+			if (!url) {
+				if (!enabled)
+					reason = _('The dae service is disabled.');
+				else if (!running)
+					reason = _('The dae service is not running.');
+				else if (status.panel_available === false)
+					reason = _('The panel files are missing. Reinstall the luci-app-dae package.');
+				else
+					reason = _('The panel is not reachable from this browser.');
+			}
+			ui.reason.textContent = reason;
+			ui.reason.hidden = !reason;
+
+			const errors = (Array.isArray(status.errors) ? status.errors : [])
+				.filter(function(token) { return token !== 'disabled'; });
+			while (ui.errors.firstChild)
+				ui.errors.removeChild(ui.errors.firstChild);
+			errors.forEach(function(token) {
+				ui.errors.appendChild(E('li', {}, dae.statusIssue(token)));
 			});
+			ui.errors.hidden = !errors.length;
 
-			card.appendChild(E('h3', { 'class': 'dae-card-title' }, _('Service')));
-			card.appendChild(field(_('Start at boot'), boot));
-			card.appendChild(field(_('Configuration write'),
-				E('span', {}, status.api_write === true ? _('Enabled') : _('Disabled'))));
-			card.appendChild(E('p', { 'class': 'dae-note' },
-				_('Configuration write lets the panel save changes to the dae configuration files.')));
-			return card;
+			// While an operation is running the switches keep the state the
+			// user gave them: the status is older than the click.
+			if (!busy) {
+				ui.boot.checked = status.boot_enabled === true;
+				ui.apiWrite.checked = status.api_write === true;
+			}
+			ui.boot.disabled = busy;
+			ui.apiWrite.disabled = busy;
+
+			syncListenerEditor(status);
 		}
 
-		function renderSecret(status) {
-			const card = E('section', { 'class': 'dae-card' });
-			const value = E('code', { 'class': 'dae-secret' }, _('Loading…'));
-			const show = E('button', { 'class': 'cbi-button', 'type': 'button' }, _('Show'));
-			const copy = E('button', { 'class': 'cbi-button', 'type': 'button', 'disabled': true }, _('Copy'));
+		function runAction(action, args) {
+			if (busy)
+				return;
 
-			function renderSecretValue(secret) {
+			busy = true;
+			actionMessage.textContent = _('Working…');
+			update(currentStatus, null);
+
+			const call = args ? dae[action].apply(null, args) : dae[action]();
+
+			call.then(dae.ensureOk).then(function(result) {
+				actionMessage.textContent = dae.resultMessage(result, _('The operation completed.'));
+			}).catch(function(error) {
+				actionMessage.textContent = dae.errorMessage(error, _('The operation failed.'));
+			}).finally(function() {
+				busy = false;
+				refresh();
+			});
+		}
+
+		function setApiWrite(value) {
+			runAction('set_api_write', [ value ]);
+		}
+
+		function loadSecret() {
+			let secretShown = false;
+
+			dae.secret().then(function(result) {
+				const secret = result && result.secret;
+
 				if (!secret) {
-					value.textContent = _('The secret is not available to this session.');
-					show.disabled = true;
-					copy.disabled = true;
+					ui.secretValue.textContent = _('The secret is not available to this session.');
+					ui.secretShow.disabled = true;
+					ui.secretCopy.disabled = true;
 					return;
 				}
 
-				value.textContent = secret;
-				show.disabled = false;
-				copy.disabled = false;
-				copy.onclick = function() {
-					copy.disabled = true;
-					const done = function() {
-						copy.textContent = _('Copied');
-						setTimeout(function() {
-							copy.textContent = _('Copy');
-							copy.disabled = false;
-						}, 1500);
-					};
-					if (navigator.clipboard && navigator.clipboard.writeText)
-						navigator.clipboard.writeText(secret).then(done, function() {
-							copy.disabled = false;
-						});
-					else
-						copy.disabled = false;
+				ui.secretValue.textContent = '••••••••••••';
+				ui.secretShow.disabled = false;
+				ui.secretCopy.disabled = false;
+
+				ui.secretShow.onclick = function() {
+					secretShown = !secretShown;
+					ui.secretValue.textContent = secretShown ? secret : '••••••••••••';
+					ui.secretShow.textContent = secretShown ? _('Hide') : _('Show');
 				};
-			}
 
-			card.appendChild(E('h3', { 'class': 'dae-card-title' }, _('API secret')));
-			card.appendChild(E('div', { 'class': 'dae-secret-row' }, [ value, show, copy ]));
-			card.appendChild(E('p', { 'class': 'dae-note' },
-				_('The panel asks for this secret the first time it is opened. It is also readable with: uci get dae.main.api_secret')));
+				ui.secretCopy.onclick = function() {
+					ui.secretCopy.disabled = true;
 
-			dae.secret().then(function(result) {
-				renderSecretValue(result && result.secret);
+					const done = function() {
+						ui.secretCopy.textContent = _('Copied');
+						setTimeout(function() {
+							ui.secretCopy.textContent = _('Copy');
+							ui.secretCopy.disabled = false;
+						}, 3000);
+					};
+
+					// The clipboard can be out of reach: a browser that is
+					// not allowed to use it refuses the write. The secret is
+					// shown then, so it can still be taken over by hand.
+					const failed = function() {
+						secretShown = true;
+						ui.secretValue.textContent = secret;
+						ui.secretShow.textContent = _('Hide');
+						ui.secretCopy.disabled = false;
+						actionMessage.textContent = _('The secret could not be written to the clipboard. It is shown instead.');
+					};
+
+					if (navigator.clipboard && navigator.clipboard.writeText)
+						navigator.clipboard.writeText(secret).then(done, failed);
+					else
+						failed();
+				};
 			}).catch(function() {
-				renderSecretValue(null);
+				ui.secretValue.textContent = _('The secret is not available to this session.');
+				ui.secretShow.disabled = true;
+				ui.secretCopy.disabled = true;
 			});
-
-			return card;
 		}
 
 		function refresh() {
@@ -300,35 +376,9 @@ return view.extend({
 				return Promise.resolve();
 
 			return dae.status().then(function(status) {
-				// A rebuild takes the focus away from the field that is being
-				// typed in, so the page waits until that field is left.
-				if (editorFocused())
-					return;
-
-				renderStatus(status, null);
+				update(status, null);
 			}).catch(function() {
-				if (editorFocused())
-					return;
-
-				renderStatus(null, true);
-			});
-		}
-
-		function runAction(action) {
-			if (busy)
-				return;
-
-			busy = true;
-			actionMessage.textContent = _('Working…');
-			renderStatus(currentStatus, null);
-
-			dae[action]().then(dae.ensureOk).then(function(result) {
-				actionMessage.textContent = dae.resultMessage(result, _('The operation completed.'));
-			}).catch(function(error) {
-				actionMessage.textContent = dae.errorMessage(error, _('The operation failed.'));
-			}).finally(function() {
-				busy = false;
-				refresh();
+				update(null, true);
 			});
 		}
 
@@ -340,7 +390,9 @@ return view.extend({
 		page.appendChild(statusArea);
 		page.appendChild(actionMessage);
 
-		renderStatus(data.status, data.error);
+		build();
+		update(data.status, data.error);
+		loadSecret();
 		poll.add(refresh, 5);
 
 		return page;
