@@ -11,8 +11,14 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+msgid "Panel"
+msgstr "面板目录"
+
 msgid "Could not read the dae service state."
 msgstr "读取 dae 服务状态失败。"
+
+msgid "If luci-app-dae was installed just now, restart rpcd so that its backend is registered."
+msgstr "如果刚安装 luci-app-dae，请重启 rpcd 使其后端生效。"
 
 msgid "Running"
 msgstr "运行中"
@@ -41,12 +47,6 @@ msgstr "状态"
 msgid "Listener"
 msgstr "监听地址"
 
-msgid "Port"
-msgstr "端口"
-
-msgid "Panel"
-msgstr "面板目录"
-
 msgid "The dae service is disabled."
 msgstr "dae 服务当前未启用。"
 
@@ -58,9 +58,6 @@ msgstr "面板文件缺失，请重新安装 luci-app-dae 软件包。"
 
 msgid "The panel is not reachable from this browser."
 msgstr "当前浏览器访问不到面板。"
-
-msgid "Panel address"
-msgstr "面板地址"
 
 msgid "Service"
 msgstr "服务"
@@ -160,3 +157,24 @@ msgstr "dae 服务报告了一个问题。"
 
 msgid "The backend did not confirm the operation."
 msgstr "后端没有确认这次操作。"
+
+msgid "Apply"
+msgstr "应用"
+
+msgid "The listener address is written to the configuration and the service is restarted to make it take effect."
+msgstr "监听地址会写入配置，并重启服务使其生效。"
+
+msgid "The listener address was saved and the service was restarted."
+msgstr "监听地址已保存，服务已重启。"
+
+msgid "The listener address was saved. It takes effect at the next start."
+msgstr "监听地址已保存，下次启动后生效。"
+
+msgid "The listener address is invalid. Use a numeric address and a port between 1 and 65535."
+msgstr "监听地址非法，请使用数字地址和 1 至 65535 之间的端口。"
+
+msgid "The request was not understood."
+msgstr "无法识别的请求。"
+
+msgid "The settings could not be written. Check the system log."
+msgstr "配置写入失败，请查看系统日志。"

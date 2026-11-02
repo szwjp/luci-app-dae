@@ -5,3 +5,6 @@ config dae 'main'
 	option api_secret ''
 	option api_write '0'
 	option ui_path '/usr/share/dae/doona'
+	# The LAN interface dae attaches to. Empty means the interface is taken
+	# from the dae configuration file (config.d/global.dae).
+	option lan_interface ''

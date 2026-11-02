@@ -13,7 +13,9 @@
 function metaItem(label, value) {
 	return E('span', { 'class': 'dae-meta-item' }, [
 		E('span', { 'class': 'dae-meta-label' }, label),
-		value == null || value === '' ? '—' : String(value)
+		value && value.nodeType
+			? value
+			: (value == null || value === '' ? '—' : String(value))
 	]);
 }
 
@@ -46,6 +48,13 @@ return view.extend({
 		let currentStatus = data.status;
 		let busy = false;
 
+		// The listener address is edited in place. The page polls every few
+		// seconds, so the edit that is not applied yet is kept aside: the
+		// poll must not wipe it, and it must not take the focus away from
+		// the field that is being typed in.
+		let listenerDraft = null;
+		let listenerEditor = null;
+
 		function renderStatus(status, error) {
 			while (statusArea.firstChild)
 				statusArea.removeChild(statusArea.firstChild);
@@ -53,6 +62,19 @@ return view.extend({
 			if (error) {
 				statusArea.appendChild(E('div', { 'class': 'alert-message' },
 					_('Could not read the dae service state.')));
+				statusArea.appendChild(E('p', { 'class': 'dae-note' },
+					_('If luci-app-dae was installed just now, restart rpcd so that its backend is registered.')));
+				return;
+			}
+
+			// A reply without the expected fields is a backend that did not
+			// answer, not a service that is switched off: showing it as
+			// "disabled" would hide the real problem.
+			if (!status || typeof status !== 'object' || typeof status.listen !== 'string') {
+				statusArea.appendChild(E('div', { 'class': 'alert-message' },
+					_('Could not read the dae service state.')));
+				statusArea.appendChild(E('p', { 'class': 'dae-note' },
+					_('If luci-app-dae was installed just now, restart rpcd so that its backend is registered.')));
 				return;
 			}
 
@@ -98,9 +120,7 @@ return view.extend({
 					E('div', { 'class': 'dae-actions' }, actions)
 				]),
 				E('div', { 'class': 'dae-meta' }, [
-					metaItem(_('Listener'), status.listen),
-					metaItem(_('Port'), status.port),
-					metaItem(_('Panel'), status.ui_path)
+					metaItem(_('Listener'), listenerEditorNode())
 				])
 			]);
 
@@ -116,14 +136,6 @@ return view.extend({
 					reason = _('The panel is not reachable from this browser.');
 				statusCard.appendChild(E('p', { 'class': 'dae-note', 'role': 'status' }, reason));
 			}
-			else {
-				// The panel asks for this address on its first run, so it is
-				// shown in a form that can be copied.
-				statusCard.appendChild(E('p', { 'class': 'dae-note' }, [
-					E('span', {}, _('Panel address')),
-					E('code', { 'class': 'dae-secret' }, url)
-				]));
-			}
 
 			const errors = (Array.isArray(status.errors) ? status.errors : [])
 				.filter(function(token) { return token !== 'disabled'; });
@@ -134,6 +146,86 @@ return view.extend({
 			statusArea.appendChild(statusCard);
 			statusArea.appendChild(renderDetails(status));
 			statusArea.appendChild(renderSecret(status));
+		}
+
+		/*
+		 * The listener address is edited in place: an address field and a
+		 * port field, and a button that saves them. The editor is built
+		 * once and kept, so a poll does not take the focus away from the
+		 * field that is being typed in.
+		 */
+		function listenerEditorNode() {
+			if (!listenerEditor)
+				createListenerEditor();
+
+			const parts = dae.splitListen(currentStatus ? currentStatus.listen : '');
+			const active = document.activeElement;
+
+			if (!listenerDraft && active !== listenerEditor.address && active !== listenerEditor.port) {
+				if (listenerEditor.address.value !== parts.address)
+					listenerEditor.address.value = parts.address;
+				if (listenerEditor.port.value !== parts.port)
+					listenerEditor.port.value = parts.port;
+			}
+
+			listenerEditor.apply.disabled = busy;
+			return listenerEditor.node;
+		}
+
+		function createListenerEditor() {
+			const address = E('input', { 'class': 'dae-listen-input', 'type': 'text', 'placeholder': '0.0.0.0' });
+			const port = E('input', { 'class': 'dae-listen-input dae-listen-port', 'type': 'number', 'min': '1', 'max': '65535' });
+			const apply = E('button', { 'class': 'cbi-button cbi-button-action', 'type': 'button' }, _('Apply'));
+
+			const remember = function() {
+				listenerDraft = { address: address.value.trim(), port: port.value.trim() };
+			};
+			address.addEventListener('input', remember);
+			port.addEventListener('input', remember);
+
+			apply.addEventListener('click', function() {
+				const addressValue = address.value.trim();
+				const portValue = parseInt(port.value, 10);
+
+				if (!addressValue || !Number.isInteger(portValue) || portValue < 1 || portValue > 65535) {
+					actionMessage.textContent = _('The listener address is invalid. Use a numeric address and a port between 1 and 65535.');
+					return;
+				}
+
+				busy = true;
+				actionMessage.textContent = _('Working…');
+				renderStatus(currentStatus, null);
+
+				dae.setListen(addressValue, portValue).then(dae.ensureOk).then(function(result) {
+					listenerDraft = null;
+					actionMessage.textContent = dae.resultMessage(result, _('The operation completed.'));
+				}).catch(function(error) {
+					actionMessage.textContent = dae.errorMessage(error, _('The operation failed.'));
+				}).finally(function() {
+					busy = false;
+					refresh();
+				});
+			});
+
+			listenerEditor = {
+				node: E('span', { 'class': 'dae-listen-editor' }, [
+					address,
+					E('span', { 'class': 'dae-listen-sep' }, ':'),
+					port,
+					apply
+				]),
+				address: address,
+				port: port,
+				apply: apply
+			};
+		}
+
+		function editorFocused() {
+			if (!listenerEditor)
+				return false;
+
+			const active = document.activeElement;
+			return active === listenerEditor.address || active === listenerEditor.port;
 		}
 
 		function renderDetails(status) {
@@ -208,8 +300,16 @@ return view.extend({
 				return Promise.resolve();
 
 			return dae.status().then(function(status) {
+				// A rebuild takes the focus away from the field that is being
+				// typed in, so the page waits until that field is left.
+				if (editorFocused())
+					return;
+
 				renderStatus(status, null);
 			}).catch(function() {
+				if (editorFocused())
+					return;
+
 				renderStatus(null, true);
 			});
 		}

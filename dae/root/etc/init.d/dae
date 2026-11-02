@@ -1,4 +1,9 @@
 #!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+START=99
+STOP=10
+
 # procd service for dae with the native HTTP control plane.
 #
 # The service reads /etc/config/dae (UCI) and writes the api section into its
@@ -9,19 +14,92 @@
 # The default layout is the managed one: the entry file /etc/dae/config.dae
 # only holds one include block, and the modules live in /etc/dae/config.d/.
 # That layout is what dae's config editor needs to write through the API.
-
-USE_PROCD=1
-START=99
-STOP=10
+#
+# USE_PROCD, START and STOP have to stay within the first eleven lines of
+# this file. rpcd builds the list of init scripts that the LuCI page
+# "Startup" shows from those three values, and it reads them from the head of
+# the script only: a script whose START= sits further down is left out of
+# that list, and its autostart state is reported as off.
 
 . /lib/functions.sh
 
 CONFIG=dae
 PROG=/usr/bin/dae
 API_FILE=/etc/dae/api.dae
+REDIRECTS_STATE=/var/run/dae-redirects.state
+
+# The interface dae attaches to is named in its own configuration file, so the
+# redirect workaround has to look at the same place. The UCI option wins over
+# the configuration file, for a device whose bridge is named differently.
+lan_interface() {
+	local interface config_file
+
+	config_get interface main lan_interface ""
+	if [ -n "$interface" ]; then
+		printf '%s\n' "$interface"
+		return 0
+	fi
+
+	config_get config_file main config_file "/etc/dae/config.dae"
+	interface="$(sed -n 's/^[[:space:]]*lan_interface:[[:space:]]*\([^[:space:]#]*\).*/\1/p' \
+		"$(dirname "$config_file")"/config.d/*.dae "$config_file" 2>/dev/null | head -n 1)"
+	printf '%s\n' "$interface"
+}
+
+# dae refuses to attach to an interface that sends ICMP redirects: the
+# redirects would fight with the rules dae installs. The kernel keeps the
+# setting in "all" as well as in the interface itself, and the effective
+# value is the larger of the two, so both are turned off while dae runs and
+# restored when it stops.
+redirects_disable() {
+	local device="$1" all old_all old_device
+
+	[ -n "$device" ] || return 0
+	[ -d "/proc/sys/net/ipv4/conf/$device" ] || return 0
+
+	all="$(cat /proc/sys/net/ipv4/conf/all/send_redirects 2>/dev/null)"
+	old_all="$all"
+	old_device="$(cat "/proc/sys/net/ipv4/conf/$device/send_redirects" 2>/dev/null)"
+
+	# The original values are written down once, on the first start: a
+	# restart must not overwrite them with the values the previous run
+	# left behind, or the original setting is lost for good.
+	if [ ! -f "$REDIRECTS_STATE" ]; then
+		{
+			echo "all=$old_all"
+			echo "$device=$old_device"
+		} > "$REDIRECTS_STATE"
+	fi
+
+	[ "$all" = "1" ] && echo 0 > /proc/sys/net/ipv4/conf/all/send_redirects
+	[ "$old_device" = "1" ] && echo 0 > "/proc/sys/net/ipv4/conf/$device/send_redirects"
+
+	return 0
+}
+
+redirects_restore() {
+	local key value
+
+	[ -f "$REDIRECTS_STATE" ] || return 0
+
+	while IFS='=' read -r key value; do
+		case "$key" in
+			all)
+				[ -n "$value" ] && echo "$value" > /proc/sys/net/ipv4/conf/all/send_redirects
+				;;
+			*)
+				[ -n "$value" ] && [ -d "/proc/sys/net/ipv4/conf/$key" ] && \
+					echo "$value" > "/proc/sys/net/ipv4/conf/$key/send_redirects"
+				;;
+		esac
+	done < "$REDIRECTS_STATE"
+
+	rm -f "$REDIRECTS_STATE"
+	return 0
+}
 
 start_service() {
-	local enabled config_file api_listen api_secret api_write ui_path
+	local enabled config_file api_listen api_secret api_write ui_path device
 	config_load "$CONFIG"
 	config_get_bool enabled main enabled 0
 	[ "$enabled" -eq "1" ] || return 1
@@ -33,6 +111,9 @@ start_service() {
 	config_get ui_path main ui_path "/usr/share/dae/doona"
 
 	write_api_section "$api_listen" "$api_secret" "$api_write" "$ui_path" || return 1
+
+	device="$(lan_interface)"
+	redirects_disable "$device"
 
 	procd_open_instance dae
 	procd_set_param command "$PROG" run -c "$config_file"
@@ -179,6 +260,7 @@ write_api_section() {
 
 stop_service() {
 	rm -f "$API_FILE"
+	redirects_restore
 }
 
 service_triggers() {
