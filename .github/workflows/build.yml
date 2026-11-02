@@ -1,11 +1,11 @@
 name: Build
 
-# Two trigger paths, both of which build and publish:
-#   - workflow_dispatch: manual run from the Actions tab. The version comes
-#     from the Makefile, so there is nothing to keep in sync by hand.
-#   - push of a v* tag: same build, plus the tag is required to agree with
-#     the Makefile version, so a mistyped tag cannot publish a mismatched
-#     release.
+# Two trigger paths:
+#   - workflow_dispatch: manual run from the Actions tab. It builds the
+#     packages; the release is published when the run is made on a tag.
+#   - push of a v* tag: the same build, plus the tag is required to agree
+#     with the Makefile version, so a mistyped tag cannot publish a
+#     mismatched release.
 #
 # The packages are built with apk-tools directly, not with an OpenWrt SDK:
 # .github/build-pkg.sh assembles the staging tree and apk mkpkg writes the ADB
@@ -13,6 +13,8 @@ name: Build
 #
 # The daemon is not built here. It comes from the release of the engine
 # repository, so the engine and the packages are built in one place each.
+# The archive is checked against the digest the engine release publishes
+# before it is unpacked.
 
 on:
   push:
@@ -125,9 +127,21 @@ jobs:
           DAE_ASSET: ${{ matrix.dae_asset }}
         run: |
           set -euo pipefail
-          url="https://github.com/szwjp/dae/releases/download/${DAE_BINARY_TAG}/dae-${DAE_ASSET}.tar.xz"
+          base="https://github.com/szwjp/dae/releases/download/${DAE_BINARY_TAG}"
+          url="${base}/dae-${DAE_ASSET}.tar.xz"
           echo "取 $url"
           curl -fsSL --retry 3 -o dae.tar.xz "$url"
+          # The engine release publishes a digest file next to every archive.
+          # The daemon runs as root on the router, so the archive is checked
+          # against the published digest before anything is unpacked.
+          curl -fsSL --retry 3 -o dae.tar.xz.dgst "${base}/dae-${DAE_ASSET}.tar.xz.dgst"
+          expected="$(awk '$3 == "sha256" { print $1 }' dae.tar.xz.dgst)"
+          actual="$(sha256sum dae.tar.xz | awk '{print $1}')"
+          if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+            echo "::error::daemon 归档校验失败：期望 $expected，实际 $actual"
+            exit 1
+          fi
+          echo "daemon 归档 sha256 校验通过: $actual"
           # The archive stores its members with a "./" prefix, so extract it
           # whole and take the daemon from the extracted tree.
           tar -xJf dae.tar.xz
@@ -207,6 +221,13 @@ jobs:
             echo "::error::Makefile 版本 $EXPECTED 非法（期望形如 2026.11.01-r3）"
             exit 1
           fi
+          PANEL_V="$(sed -n 's/^PKG_VERSION:=//p' luci-app-dae/Makefile | head -1)"
+          PANEL_R="$(sed -n 's/^PKG_RELEASE:=//p' luci-app-dae/Makefile | head -1)"
+          PANEL="${PANEL_V}-r${PANEL_R}"
+          if [[ ! "$PANEL" =~ ^[0-9][0-9A-Za-z.]*-r[0-9]+$ ]]; then
+            echo "::error::面板 Makefile 版本 $PANEL 非法（期望形如 2026.11.01-r3）"
+            exit 1
+          fi
           # 等位编号：把 -rN 规范为 -rNN，使 GitHub 按 tag 字符串排序时
           # r02 < r10 < r11，Release 列表保持从大到小。
           canon() {
@@ -225,31 +246,29 @@ jobs:
             fi
           fi
           echo "VERSION=$EXPECTED" >> "$GITHUB_ENV"
+          echo "PANEL_VERSION=$PANEL" >> "$GITHUB_ENV"
           echo "TAG_VERSION=$TAG_VERSION" >> "$GITHUB_ENV"
-          echo "发布版本 v$TAG_VERSION（包内版本 $EXPECTED）"
+          echo "发布版本 v$TAG_VERSION（引擎包 $EXPECTED，面板包 $PANEL）"
 
-      - name: Publish release
+      - name: Write release notes
         env:
-          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ env.VERSION }}
+          PANEL_VERSION: ${{ env.PANEL_VERSION }}
+          TAG_VERSION: ${{ env.TAG_VERSION }}
         run: |
           set -euo pipefail
-          TAG="v${{ env.TAG_VERSION }}"
-          ls -la release/
-          # Replace an existing release with the same tag, so a rerun does not
-          # fail on an already published tag.
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release delete "$TAG" --yes --cleanup-tag
-          fi
-          gh release create "$TAG" release/*.apk \
-            --title "dae + doona panel $TAG" \
-            --notes "dae 引擎（原生 HTTP 控制面）+ doona 面板。
+          # The file names are spelled out: apk resolves a URL as it is and
+          # does not expand a wildcard, so a "*.apk" in the notes would send
+          # the reader to a 404.
+          cat > notes.md <<-EOF
+          dae 引擎（原生 HTTP 控制面）+ doona 面板。
 
           在 OpenWrt / ImmortalWrt 上安装（apk）：
 
           \`\`\`sh
           apk add --allow-untrusted \\
-            https://github.com/szwjp/luci-app-dae/releases/download/$TAG/dae-${{ env.VERSION }}-x86_64.apk \\
-            https://github.com/szwjp/luci-app-dae/releases/download/$TAG/luci-app-dae-*.apk
+            https://github.com/szwjp/luci-app-dae/releases/download/v${TAG_VERSION}/dae-${VERSION}-x86_64.apk \\
+            https://github.com/szwjp/luci-app-dae/releases/download/v${TAG_VERSION}/luci-app-dae-${PANEL_VERSION}.apk
           \`\`\`
 
           守护进程按架构分发：x86_64、arm64（aarch64_generic）、riscv64（riscv64_generic），
@@ -259,8 +278,27 @@ jobs:
 
           \`\`\`sh
           apk add --allow-untrusted \\
-            https://github.com/szwjp/luci-app-dae/releases/download/$TAG/luci-i18n-dae-zh-cn-*.apk
+            https://github.com/szwjp/luci-app-dae/releases/download/v${TAG_VERSION}/luci-i18n-dae-zh-cn-${PANEL_VERSION}.apk
           \`\`\`
 
           服务默认禁用；启用方式：
-          \`uci set dae.main.enabled=1 && uci commit dae && /etc/init.d/dae start\`"
+          \`uci set dae.main.enabled=1 && uci commit dae && /etc/init.d/dae start\`
+          EOF
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_VERSION: ${{ env.TAG_VERSION }}
+        run: |
+          set -euo pipefail
+          TAG="v${{ env.TAG_VERSION }}"
+          ls -la release/
+          # A rerun replaces the assets of an existing release but keeps the
+          # tag where it is. Deleting the tag would move a published release
+          # to another commit, so the same URL would serve other bytes.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/*.apk --clobber
+            gh release edit "$TAG" --title "dae + doona panel $TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" release/*.apk --title "dae + doona panel $TAG" --notes-file notes.md
+          fi

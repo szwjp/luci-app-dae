@@ -162,14 +162,18 @@ fi
 find "$STAGE/etc/init.d" -type f -exec chmod 0755 {} + 2>/dev/null || true
 find "$STAGE/etc/dae" -type f -exec chmod 0600 {} + 2>/dev/null || true
 find "$STAGE/etc/config" -type f -exec chmod 0600 {} + 2>/dev/null || true
+# The rpcd backend is a program rpcd runs, so it has to stay executable.
+find "$STAGE/usr/libexec/rpcd" -type f -exec chmod 0755 {} + 2>/dev/null || true
 
 # The files belong to root on the device. Under fakeroot (which the workflow
 # uses) the chown is recorded as root; without it the command fails and the
 # staging tree keeps its current owner.
 chown -R 0:0 "$STAGE" 2>/dev/null || true
 
-# The file list apk keeps for the package.
-(cd "$STAGE" && find . -type f,l | sed 's|^\./||' | sed 's|^|/|' | sort) > "$TEMP_DIR/$PKG_NAME.list"
+# The file list apk keeps for the package. The type list is spelled out
+# instead of "find -type f,l": the comma form is a GNU extension and the BSD
+# find of macOS silently drops the symlinks from the list.
+(cd "$STAGE" && find . \( -type f -o -type l \) | sed 's|^\./||' | sed 's|^|/|' | sort) > "$TEMP_DIR/$PKG_NAME.list"
 mv "$TEMP_DIR/$PKG_NAME.list" "$STAGE/lib/apk/packages/$PKG_NAME.list"
 
 if [ -n "$CONFFILES" ]; then
@@ -193,10 +197,13 @@ cat > "$TEMP_DIR/post-install" <<-EOF
 	[ -n "\${IPKG_INSTROOT}" ] || {
 		rm -f /tmp/luci-indexcache.*
 		rm -rf /tmp/luci-modulecache/
-		killall -HUP rpcd 2>/dev/null
-		# The dae service is disabled by default; start it only when the
-		# operator has enabled it.
-		[ -x /etc/init.d/dae ] && /etc/init.d/dae enabled && /etc/init.d/dae restart
+		# The LuCI menu is read by rpcd, so its cache has to go and
+		# rpcd has to pick the new menu and the new ACLs up.
+		/etc/init.d/rpcd reload 2>/dev/null
+		/etc/init.d/uhttpd restart 2>/dev/null
+		# The dae service is disabled by default; restart it only when
+		# the operator has enabled it.
+		[ -x /etc/init.d/dae ] && [ "\$(uci -q get dae.main.enabled)" = "1" ] && /etc/init.d/dae restart
 		exit 0
 	}
 EOF
@@ -251,7 +258,7 @@ if [ -d "$PKG_DIR/po" ]; then
 		mkdir -p "$i18n_dir/lib/apk/packages/"
 		cp "$TEMP_DIR/$lmo_name" "$i18n_dir/usr/lib/lua/luci/i18n/"
 
-		(cd "$i18n_dir" && find . -type f,l | sed 's|^\./||' | sed 's|^|/|' | sort) > "$TEMP_DIR/$i18n_name.list"
+		(cd "$i18n_dir" && find . \( -type f -o -type l \) | sed 's|^\./||' | sed 's|^|/|' | sort) > "$TEMP_DIR/$i18n_name.list"
 		mv "$TEMP_DIR/$i18n_name.list" "$i18n_dir/lib/apk/packages/$i18n_name.list"
 
 		apk mkpkg \

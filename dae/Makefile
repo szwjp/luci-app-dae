@@ -16,7 +16,7 @@
 
 PKG_NAME:=dae
 PKG_VERSION:=2026.11.01
-PKG_RELEASE:=7
+PKG_RELEASE:=8
 
 PKG_LICENSE:=AGPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>
@@ -38,7 +38,9 @@ PKG_ARCH:=x86_64
 # The prebuilt daemon, staged outside root/ because it goes to /usr/bin. The
 # path is architecture neutral: the CI puts the daemon of the architecture it
 # builds into assets/<arch>/dae and points the packaging script at that
-# directory, so the same Makefile serves every architecture.
+# directory, so the same Makefile serves every architecture. The binary itself
+# is not kept in this repository: a copy that drifts from the engine release
+# would be packaged silently, so the build fails instead of shipping it.
 PKG_ASSETS:=assets/dae=usr/bin/dae
 
 # The files that survive an upgrade untouched.
