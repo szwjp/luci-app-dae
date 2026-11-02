@@ -1,0 +1,231 @@
+#!/bin/sh
+# dae-geo-update — fetch the newest geoip.dat / geosite.dat for the dae engine
+# and restart dae so it picks them up.
+#
+# Source (the only one):
+#   https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat
+#   https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat
+# The @release branch is used on purpose: a @<tag> URL returns 404, while the
+# branch holds the artifact of the latest upstream build. So nothing here pins a
+# version or records a tag: whatever @release serves is what gets installed.
+#
+# Target: /usr/share/v2ray — the directory the init script points dae at with
+# DAE_LOCATION_ASSET. dae reads the files when it starts, and only then.
+#
+# Run by: the cron entry the dae-geo-update init script keeps in root's
+# crontab, and by hand with /usr/bin/dae-geo-update.
+#
+# Log: /var/log/dae-geo-update.log, and every line also goes to syslog under the
+# dae-geo-update tag. /var is a tmpfs on OpenWrt, so the file does not survive a
+# reboot; the script's LOGFILE constant is the one place to change that.
+#
+# Backup: /etc/dae/geo-backup holds the files that were installed before this
+# run, so a failed update can be rolled back. The backup is kept across runs on
+# purpose: it is the state to go back to when a new file turns out to be bad.
+#
+# Download: the request must carry a Range header. Measured on one router, one
+# file, one node: a plain GET ran at 16KB/s, an explicit range request at MB/s.
+# curl's -C - degrades to a plain GET when the local file does not exist yet, so
+# the first attempt always asks for the range explicitly and only a resume of an
+# existing partial file uses -C -.
+#
+# Verification: the sha256 the upstream publishes next to the file is the only
+# trustworthy proof that the download is complete and unmodified — the CDN's
+# content-length and content-range are not (the range total measured smaller
+# than the real file). A mismatch is retried from scratch, at most three rounds.
+# Two cheap guards sit on top: a size range, and a first byte of 0x0a, which is
+# a protobuf tag and rules out an HTML error page.
+#
+# Rollback: dae cannot load broken geo data — the configuration fails to build
+# and the proxy stops. This script runs unattended in the early morning, so a
+# bad file would only be noticed hours later, when the internet is down. Hence
+# the daemon is restarted and checked, and the previous files are put back when
+# it does not come up.
+#
+# Note: the two files under /usr/share/v2ray are installed by the apk packages
+# v2ray-geoip and v2ray-geosite. Upgrading those packages overwrites them with
+# the feed versions; the next run of this script puts the newer files back.
+
+set -u
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+CONFIG=dae
+DIR=/usr/share/v2ray
+LOGFILE=/var/log/dae-geo-update.log
+BACKUP_DIR=/etc/dae/geo-backup
+WORK=/tmp/dae-geo-update.work
+HOST=cdn.jsdelivr.net
+REPO=Loyalsoldier/v2ray-rules-dat
+FILES="geosite.dat geoip.dat"
+MIN_BYTES=5000000
+MAX_BYTES=104857600
+MAX_ROUNDS=3
+FETCH_TIMEOUT=900
+START_TIMEOUT=90
+
+log() {
+	local line
+	line="$(date '+%F %T') $*"
+	echo "$line" >> "$LOGFILE" 2>/dev/null
+	logger -t dae-geo-update "$*" 2>/dev/null
+}
+
+die() {
+	log "FATAL: $*"
+	exit 1
+}
+
+# /tmp is a tmpfs on the router, and tens of megabytes in RAM are wasted there
+cleanup() {
+	rm -rf "$WORK" 2>/dev/null
+}
+trap cleanup EXIT INT TERM
+
+# The update is a background job, so it has to be switchable off without
+# touching the crontab.
+enabled() {
+	local value
+	value="$(uci -q get "$CONFIG.main.geo_update")"
+	[ "$value" = "0" ] && return 1
+	return 0
+}
+
+file_hash() {
+	sha256sum "$1" 2>/dev/null | awk '{print $1}'
+}
+
+# Fetch a file: resume an existing partial one, otherwise ask for the range
+# explicitly.
+fetch_file() {
+	local f="$1" url
+	url="https://$HOST/gh/$REPO@release/$f"
+	if [ -s "$WORK/$f" ]; then
+		curl -fsS -C - --connect-timeout 20 --max-time "$FETCH_TIMEOUT" -o "$WORK/$f" "$url" 2>/dev/null
+	else
+		curl -fsS -r 0- --connect-timeout 20 --max-time "$FETCH_TIMEOUT" -o "$WORK/$f" "$url" 2>/dev/null
+	fi
+}
+
+# Fetch a file and verify it. Returns 0 when the file is usable.
+fetch_verified() {
+	local f="$1" base expected got size magic round
+
+	base="https://$HOST/gh/$REPO@release"
+
+	# The sha256 the upstream publishes is the only trustworthy reference
+	curl -fsS --max-time 60 -o "$WORK/$f.sha256sum" "$base/$f.sha256sum" 2>/dev/null
+	expected="$(awk '{print $1}' "$WORK/$f.sha256sum" 2>/dev/null | head -n 1)"
+	[ -n "$expected" ] || log "$f: no upstream sha256, size and header are the only checks left"
+
+	round=1
+	while [ "$round" -le "$MAX_ROUNDS" ]; do
+		fetch_file "$f" || log "$f: round $round did not finish, resuming"
+		got="$(file_hash "$WORK/$f")"
+		if [ -n "$expected" ] && [ -n "$got" ] && [ "$got" = "$expected" ]; then
+			log "$f: sha256 matches upstream ($got)"
+			return 0
+		fi
+		if [ -n "$expected" ]; then
+			log "$f: round $round sha256 mismatch (local ${got:-none}, upstream $expected), fetching again"
+		fi
+		# A mismatch means the file is not usable: drop it so the next
+		# round fetches the whole range again.
+		rm -f "$WORK/$f"
+		round=$((round + 1))
+	done
+
+	# Last resort: the size range and the protobuf header.
+	if [ -f "$WORK/$f" ]; then
+		size="$(wc -c < "$WORK/$f")"
+		magic="$(hexdump -n 1 -e '1/1 "%02x"' "$WORK/$f" 2>/dev/null)"
+		if [ "$size" -ge "$MIN_BYTES" ] && [ "$size" -le "$MAX_BYTES" ] && [ "$magic" = "0a" ]; then
+			log "$f: sha256 never matched, accepted on size ($size) and header; check this file"
+			return 0
+		fi
+		log "$f: size or header out of line ($size bytes, first byte '$magic')"
+	fi
+	return 1
+}
+
+log "--- start ---"
+
+enabled || {
+	log "skipped: $CONFIG.main.geo_update is 0"
+	exit 0
+}
+
+mkdir -p "$WORK" || die "cannot create the work directory $WORK"
+mkdir -p "$BACKUP_DIR" || die "cannot create the backup directory $BACKUP_DIR"
+
+# Both files are fetched and verified before either is installed: a failure
+# halfway through leaves the running daemon on its old files.
+for f in $FILES; do
+	fetch_verified "$f" || die "$f: download or verification failed, no file is replaced"
+done
+
+# A file that is already the newest one is left alone, so nothing has to be
+# restarted for it.
+changed=0
+for f in $FILES; do
+	new="$(file_hash "$WORK/$f")"
+	old="$(file_hash "$DIR/$f")"
+	if [ -n "$old" ] && [ "$new" = "$old" ]; then
+		log "$f: already the newest ($new), left alone"
+		continue
+	fi
+	cp -f "$DIR/$f" "$BACKUP_DIR/$f.bak" 2>/dev/null
+	mv -f "$WORK/$f" "$DIR/$f" || die "cannot replace $f"
+	chmod 644 "$DIR/$f"
+	changed=1
+	log "$f: replaced ($old -> $new)"
+done
+
+if [ "$changed" = "0" ]; then
+	log "OK: both files are already the newest, dae is not restarted"
+	exit 0
+fi
+
+# dae reads the geo data when it starts, so a reload does not pick up the new
+# files: it has to be restarted.
+restart_dae() {
+	/etc/init.d/dae restart >/dev/null 2>&1
+}
+
+dae_running() {
+	ubus call dae status 2>/dev/null | grep -q '"running": true'
+}
+
+restart_dae
+i=0
+OK=0
+while [ "$i" -lt "$START_TIMEOUT" ]; do
+	sleep 2
+	if dae_running; then
+		OK=1
+		break
+	fi
+	i=$((i + 2))
+done
+
+if [ "$OK" = "1" ]; then
+	log "OK: geoip/geosite updated, dae restarted and running"
+	exit 0
+fi
+
+log "dae did not come up, rolling every file back"
+for f in $FILES; do
+	if [ -f "$BACKUP_DIR/$f.bak" ]; then
+		cp -f "$BACKUP_DIR/$f.bak" "$BACKUP_DIR/$f.rollback" && mv -f "$BACKUP_DIR/$f.rollback" "$DIR/$f"
+	fi
+done
+restart_dae
+sleep 5
+if dae_running; then
+	log "rolled back to the previous geo data, dae is running again"
+else
+	log "dae is still not running after the rollback, it needs a human"
+fi
+log "FAILED"
+exit 1

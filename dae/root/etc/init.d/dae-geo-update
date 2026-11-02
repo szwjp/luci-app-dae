@@ -1,0 +1,105 @@
+#!/bin/sh /etc/rc.common
+
+START=49
+STOP=11
+
+# Keeps the weekly geo data update in root's crontab.
+#
+# The job itself is /usr/bin/dae-geo-update, installed by this package. crond
+# reads /etc/crontabs/root and procd watches that file, so writing the entry
+# into it is all it takes: crond is restarted and reads the new crontab.
+#
+# The service runs before crond (START=49 against cron's 50), because crond
+# refuses to start while /etc/crontabs holds no file at all. Writing the entry
+# first means crond finds a crontab to read.
+#
+# The schedule is a UCI option, so it can be changed without editing a file
+# that belongs to the package:
+#
+#   uci set dae.main.geo_update_cron='0 3 * * 1'
+#   uci commit dae
+#   /etc/init.d/dae-geo-update restart
+#
+# The update itself can be switched off with dae.main.geo_update=0. In that
+# case the entry is taken out of the crontab instead of being left to run and
+# do nothing.
+
+. /lib/functions.sh
+
+CONFIG=dae
+CRONTAB=/etc/crontabs/root
+JOB=/usr/bin/dae-geo-update
+DEFAULT_SCHEDULE="0 2 * * 1"
+
+schedule() {
+	local value
+	config_load "$CONFIG"
+	config_get value main geo_update_cron "$DEFAULT_SCHEDULE"
+	echo "${value:-$DEFAULT_SCHEDULE}"
+}
+
+update_enabled() {
+	local value
+	config_load "$CONFIG"
+	config_get_bool value main geo_update 1
+	echo "$value"
+}
+
+# The entry is found by its program path, so a line left over from an earlier
+# schedule is replaced instead of piling up.
+install_job() {
+	local line
+	mkdir -p /etc/crontabs || return 1
+	touch "$CRONTAB" || return 1
+	chmod 600 "$CRONTAB"
+
+	grep -v "$JOB" "$CRONTAB" > "$CRONTAB.new" 2>/dev/null
+	line="$(schedule) $JOB >/dev/null 2>&1"
+	echo "$line" >> "$CRONTAB.new"
+	mv "$CRONTAB.new" "$CRONTAB" || return 1
+	chmod 600 "$CRONTAB"
+	logger -t dae-geo-update "scheduled: $line"
+	return 0
+}
+
+remove_job() {
+	[ -f "$CRONTAB" ] || return 0
+	grep -v "$JOB" "$CRONTAB" > "$CRONTAB.new" 2>/dev/null
+	mv "$CRONTAB.new" "$CRONTAB" 2>/dev/null
+	chmod 600 "$CRONTAB" 2>/dev/null
+	return 0
+}
+
+# crond only starts when the crontab directory holds a file, and it is not
+# started at all when the directory is empty. The entry above makes sure there
+# is one, but crond can still be down when this service is started by hand.
+ensure_cron() {
+	[ -x /etc/init.d/cron ] || return 0
+	pgrep -f crond >/dev/null 2>&1 && return 0
+	/etc/init.d/cron start >/dev/null 2>&1
+}
+
+start() {
+	if [ "$(update_enabled)" = "1" ]; then
+		install_job || {
+			logger -t dae-geo-update "cannot write the cron entry into $CRONTAB"
+			return 1
+		}
+		ensure_cron
+	else
+		remove_job
+	fi
+}
+
+stop() {
+	remove_job
+}
+
+# rc.common's disable only drops the rc.d links, and the cron entry would
+# outlive them, so it is taken out here as well.
+disable() {
+	remove_job
+	name="$(basename "${initscript}")"
+	rm -f /etc/rc.d/S??$name
+	rm -f /etc/rc.d/K??$name
+}
