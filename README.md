@@ -24,17 +24,24 @@
 | arm64 | `dae-2026.11.01-r10-aarch64_generic.apk` |
 | riscv64 | `dae-2026.11.01-r10-riscv64_generic.apk` |
 
+OpenWrt / ImmortalWrt 的 apk v3 只认本地文件，不接受 URL，所以先把包下载下来再装：
+
 ```sh
-apk add --allow-untrusted \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r10/dae-2026.11.01-r10-x86_64.apk \
+cd /tmp
+wget -O dae.apk \
+  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r10/dae-2026.11.01-r10-x86_64.apk
+wget -O luci-app-dae.apk \
   https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r10/luci-app-dae-2026.11.01-r9.apk
+apk add --allow-untrusted ./dae.apk ./luci-app-dae.apk
 ```
 
 可选的 LuCI 翻译包（界面语言随浏览器 `Accept-Language` 走）：
 
 ```sh
-apk add --allow-untrusted \
+cd /tmp
+wget -O luci-i18n-dae-zh-cn.apk \
   https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r10/luci-i18n-dae-zh-cn-2026.11.01-r9.apk
+apk add --allow-untrusted ./luci-i18n-dae-zh-cn.apk
 ```
 
 服务**默认禁用**。先按设备改好配置再启用：`/etc/dae/config.dae` 是入口文件，模块放在
