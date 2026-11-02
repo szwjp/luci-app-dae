@@ -24,6 +24,13 @@ const callSetListen = rpc.declare({
 	expect: { '': {} },
 	reject: true
 });
+const callSetApiWrite = rpc.declare({
+	object: 'dae',
+	method: 'set_api_write',
+	params: [ 'value' ],
+	expect: { '': {} },
+	reject: true
+});
 
 let pageStylesInstalled = false;
 
@@ -181,6 +188,9 @@ function statusIssue(token) {
 		listener_applied: _('The listener address was saved and the service was restarted.'),
 		listener_saved: _('The listener address was saved. It takes effect at the next start.'),
 		listener_invalid: _('The listener address is invalid. Use a numeric address and a port between 1 and 65535.'),
+		api_write_applied: _('The configuration write permission was saved and the service was restarted.'),
+		api_write_saved: _('The configuration write permission was saved. It takes effect at the next start.'),
+		invalid_value: _('The value is not valid.'),
 		invalid_request: _('The request was not understood.'),
 		settings_write_failed: _('The settings could not be written. Check the system log.'),
 		invalid_operation: _('The operation is not known.')
@@ -212,7 +222,8 @@ return baseclass.extend({
 	restart: callRestart,
 	enable: callEnable,
 	disable: callDisable,
-	setListen: callSetListen,
+	set_listen: callSetListen,
+	set_api_write: callSetApiWrite,
 	panelUrl: panelUrl,
 	splitListen: splitListen,
 	statusIssue: statusIssue,

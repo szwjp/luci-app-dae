@@ -89,6 +89,26 @@ service_running() {
 	return 1
 }
 
+# procd stops and starts the instance asynchronously: the daemon needs a
+# moment to exit, and the state right after the command still reports the
+# old one. A stop that reported a failure although the daemon was on its
+# way out would be a lie, so the state is waited for, with a bound.
+wait_state() {
+	local want="$1" tries="$2" i=0
+
+	while [ "$i" -lt "$tries" ]; do
+		if [ "$want" = running ]; then
+			service_running && return 0
+		else
+			service_running || return 0
+		fi
+		i=$((i + 1))
+		[ "$i" -lt "$tries" ] && sleep 1
+	done
+
+	return 1
+}
+
 boot_enabled() {
 	/etc/init.d/dae enabled >/dev/null 2>&1
 }
@@ -180,7 +200,7 @@ start() {
 	uci -q set "$CONFIG.main.enabled=1"
 	uci -q commit "$CONFIG"
 	/etc/init.d/dae start >/dev/null 2>&1
-	if service_running; then
+	if wait_state running 15; then
 		emit_result true started
 	else
 		emit_result false start_failed
@@ -189,10 +209,10 @@ start() {
 
 stop() {
 	/etc/init.d/dae stop >/dev/null 2>&1
-	if service_running; then
-		emit_result false stop_failed
-	else
+	if wait_state stopped 15; then
 		emit_result true stopped
+	else
+		emit_result false stop_failed
 	fi
 }
 
@@ -200,7 +220,7 @@ restart() {
 	uci -q set "$CONFIG.main.enabled=1"
 	uci -q commit "$CONFIG"
 	/etc/init.d/dae restart >/dev/null 2>&1
-	if service_running; then
+	if wait_state running 15; then
 		emit_result true restarted
 	else
 		emit_result false restart_failed
@@ -275,13 +295,52 @@ set_listen() {
 
 	if service_running; then
 		/etc/init.d/dae restart >/dev/null 2>&1
-		if service_running; then
+		if wait_state running 15; then
 			emit_result true listener_applied
 		else
 			emit_result false restart_failed
 		fi
 	else
 		emit_result true listener_saved
+	fi
+}
+
+# The panel may only write the configuration files when it is allowed to, and
+# the daemon reports that in the capabilities of its native API. The switch on
+# the LuCI page turns the permission on and off.
+set_api_write() {
+	local request value
+
+	request="$(cat)"
+	json_load "$request" 2>/dev/null || { emit_result false invalid_request; return 1; }
+	json_get_var value value
+
+	case "$value" in
+		1|true) value=1 ;;
+		0|false) value=0 ;;
+		*) emit_result false invalid_value; return 1 ;;
+	esac
+
+	if ! uci -q set "$CONFIG.main.api_write=$value"; then
+		emit_result false settings_write_failed
+		return 1
+	fi
+	if ! uci -q commit "$CONFIG"; then
+		emit_result false settings_write_failed
+		return 1
+	fi
+
+	# The daemon reads the permission when it starts, so it has to be
+	# restarted for the change to reach the core.
+	if service_running; then
+		/etc/init.d/dae restart >/dev/null 2>&1
+		if wait_state running 15; then
+			emit_result true api_write_applied
+		else
+			emit_result false restart_failed
+		fi
+	else
+		emit_result true api_write_saved
 	fi
 }
 
@@ -292,7 +351,7 @@ set_listen() {
 # the LuCI page fails with "method not found".
 case "$1" in
 list)
-	echo '{"status":{},"secret":{},"start":{},"stop":{},"restart":{},"enable":{},"disable":{},"set_listen":{"address":"String","port":"Integer"}}'
+	echo '{"status":{},"secret":{},"start":{},"stop":{},"restart":{},"enable":{},"disable":{},"set_listen":{"address":"String","port":"Integer"},"set_api_write":{"value":"Boolean"}}'
 	;;
 call)
 	case "$2" in
@@ -304,6 +363,7 @@ call)
 		enable) enable ;;
 		disable) disable ;;
 		set_listen) set_listen ;;
+		set_api_write) set_api_write ;;
 		*) emit_result false invalid_operation ;;
 	esac
 	;;

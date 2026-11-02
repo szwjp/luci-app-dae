@@ -68,9 +68,6 @@ msgstr "開機自啟"
 msgid "Configuration write"
 msgstr "允許寫入設定"
 
-msgid "Enabled"
-msgstr "已開啟"
-
 msgid "Configuration write lets the panel save changes to the dae configuration files."
 msgstr "開啟後，面板可以透過 API 把變更寫回 dae 的設定檔。"
 
@@ -161,9 +158,6 @@ msgstr "後端沒有確認這次操作。"
 msgid "Apply"
 msgstr "套用"
 
-msgid "The listener address is written to the configuration and the service is restarted to make it take effect."
-msgstr "監聽位址會寫入設定，並重啟服務使其生效。"
-
 msgid "The listener address was saved and the service was restarted."
 msgstr "監聽位址已儲存，服務已重啟。"
 
@@ -178,3 +172,18 @@ msgstr "無法辨識的要求。"
 
 msgid "The settings could not be written. Check the system log."
 msgstr "設定寫入失敗，請查看系統記錄。"
+
+msgid "Hide"
+msgstr "隱藏"
+
+msgid "The configuration write permission was saved and the service was restarted."
+msgstr "設定寫入權限已儲存，服務已重啟。"
+
+msgid "The configuration write permission was saved. It takes effect at the next start."
+msgstr "設定寫入權限已儲存，下次啟動後生效。"
+
+msgid "The value is not valid."
+msgstr "該值無效。"
+
+msgid "The secret could not be written to the clipboard. It is shown instead."
+msgstr "密鑰没能寫入剪貼簿，已改為直接顯示。"
