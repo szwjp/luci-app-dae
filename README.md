@@ -27,14 +27,14 @@
 ```sh
 apk add --allow-untrusted \
   https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r10/dae-2026.11.01-r10-x86_64.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r10/luci-app-dae-2026.11.01-r8.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r10/luci-app-dae-2026.11.01-r9.apk
 ```
 
 可选的 LuCI 翻译包（界面语言随浏览器 `Accept-Language` 走）：
 
 ```sh
 apk add --allow-untrusted \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r10/luci-i18n-dae-zh-cn-2026.11.01-r8.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2026.11.01-r10/luci-i18n-dae-zh-cn-2026.11.01-r9.apk
 ```
 
 服务**默认禁用**。先按设备改好配置再启用：`/etc/dae/config.dae` 是入口文件，模块放在
@@ -85,12 +85,15 @@ dae 拒绝挂到会发送 ICMP 重定向的接口上，重定向会和 dae 装�
   `dae.main.api_listen`，服务随即重启让新地址生效；服务没在跑时只保存，
   下次启动生效。
 * 直接访问：`http://<路由器地址>:9527/ui/`。
+* 面板的「出站模式」（规则/直连/全局）写在含 `routing` 段的那个文件里，也就是
+  `config.d/routing.dae`；入口文件 `config.dae` 只读，面板不会去改它。
 
 LuCI 页面通过 rpcd 的 exec 后端读取状态。软件包安装后会自动 reload rpcd；
 如果页面报"读取 dae 服务状态失败"，说明后端没被注册，执行
 `/etc/init.d/rpcd reload` 即可。
 
-面板要改配置需要打开 `api_write`：
+面板要改配置需要打开 `api_write`：LuCI 页面上的「允许写入配置」开关就是它，
+也可以用命令行开：
 
 ```sh
 uci set dae.main.api_write=1 && uci commit dae && /etc/init.d/dae restart
