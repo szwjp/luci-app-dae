@@ -1,0 +1,236 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# rpcd backend of the dae LuCI page.
+#
+# The panel is served by dae itself, so this backend does not proxy it: it
+# reports the state of the service and the address the panel lives at, and it
+# starts, stops and reconfigures the daemon. The LuCI page reads the result
+# over ubus, exactly like the honk package does for its own core.
+
+. /lib/functions.sh
+. /lib/functions/network.sh
+. /usr/share/libubox/jshn.sh
+
+CONFIG=dae
+UI_PATH=/usr/share/dae/doona
+DEFAULT_LISTEN=0.0.0.0:9527
+LAN_NETWORK=lan
+
+emit_result() {
+	ok=$1
+	message=$2
+	[ "$ok" = true ] && ok=1 || ok=0
+	json_init
+	json_add_boolean ok "$ok"
+	json_add_string message "$message"
+	json_dump
+}
+
+# The listener address has to be a numeric address with a port, the same rule
+# the init script applies before it starts the daemon.
+valid_listen() {
+	local listen="$1" host port
+
+	host="${listen%:*}"
+	port="${listen##*:}"
+	[ "$host" != "$listen" ] || return 1
+	case "$port" in
+		''|*[!0-9]*) return 1 ;;
+	esac
+	[ "$port" -ge 1 ] && [ "$port" -le 65535 ] || return 1
+
+	case "$host" in
+		\[*\]*)
+			host="${host#\[}"
+			host="${host%\]}"
+			;;
+	esac
+
+	case "$host" in
+		'') return 1 ;;
+		*:*)
+			case "$host" in *[!0-9a-fA-F:]*) return 1 ;; esac
+			;;
+		*)
+			case "$host" in *[!0-9.]*) return 1 ;; esac
+			;;
+	esac
+
+	return 0
+}
+
+listen_port() {
+	echo "${1##*:}"
+}
+
+listen_host() {
+	local host="${1%:*}"
+	case "$host" in
+		\[*\]*)
+			host="${host#\[}"
+			host="${host%\]}"
+			;;
+	esac
+	echo "$host"
+}
+
+is_loopback() {
+	case "$1" in
+		127.*|::1|0:0:0:0:0:0:0:1) return 0 ;;
+	esac
+	return 1
+}
+
+service_running() {
+	case "$(/etc/init.d/dae status 2>/dev/null)" in
+		running*) return 0 ;;
+	esac
+	return 1
+}
+
+boot_enabled() {
+	/etc/init.d/dae enabled >/dev/null 2>&1
+}
+
+# The LAN address of the router. The API answers a wildcard bind only for an
+# IP literal as the Host header, so the page needs the address to fall back
+# to when the browser reached the router by name.
+lan_address() {
+	local device address
+
+	network_get_device device "$LAN_NETWORK" 2>/dev/null || return 1
+	[ -n "$device" ] || return 1
+	network_get_ipaddr address "$LAN_NETWORK" 2>/dev/null || address=
+	case "$address" in
+		''|*[!0-9.]*) address= ;;
+	esac
+	[ -n "$address" ] || return 1
+	printf '%s\n' "$address"
+}
+
+status() {
+	local enabled listen port api_write secret ui_path panel_available running boot errors lan
+
+	config_load "$CONFIG"
+	config_get_bool enabled main enabled 0
+	config_get listen main api_listen "$DEFAULT_LISTEN"
+	config_get api_write main api_write "0"
+	config_get secret main api_secret ""
+	config_get ui_path main ui_path "$UI_PATH"
+
+	port="$(listen_port "$listen")"
+	case "$port" in
+		''|*[!0-9]*) port=0 ;;
+	esac
+
+	if service_running; then running=1; else running=0; fi
+	if boot_enabled; then boot=1; else boot=0; fi
+	if [ -r "$ui_path/index.html" ]; then panel_available=1; else panel_available=0; fi
+	[ "$api_write" = "1" ] && api_write=1 || api_write=0
+	lan="$(lan_address)"
+
+	errors=""
+	[ "$enabled" = 1 ] || errors="$errors disabled"
+	if [ "$enabled" = 1 ] && [ "$running" != 1 ]; then
+		errors="$errors service_not_running"
+	fi
+	[ -n "$secret" ] || errors="$errors secret_missing"
+	[ "$panel_available" = 1 ] || errors="$errors panel_missing"
+	if valid_listen "$listen"; then
+		if is_loopback "$(listen_host "$listen")"; then
+			errors="$errors loopback_listener"
+		fi
+	else
+		errors="$errors invalid_listener"
+	fi
+
+	json_init
+	json_add_boolean enabled "$enabled"
+	json_add_boolean running "$running"
+	json_add_boolean boot_enabled "$boot"
+	json_add_string listen "$listen"
+	json_add_int port "$port"
+	json_add_boolean api_write "$api_write"
+	json_add_boolean panel_available "$panel_available"
+	json_add_string ui_path "$ui_path"
+	json_add_string lan_address "$lan"
+	json_add_array errors
+	for error in $errors; do
+		json_add_string "" "$error"
+	done
+	json_close_array
+	json_dump
+}
+
+secret() {
+	local secret
+
+	config_load "$CONFIG"
+	config_get secret main api_secret ""
+
+	json_init
+	json_add_string secret "$secret"
+	json_dump
+}
+
+# rc.common always reports a started procd service as started, so the state is
+# read back instead of trusting the exit code of the init script.
+start() {
+	uci -q set "$CONFIG.main.enabled=1"
+	uci -q commit "$CONFIG"
+	/etc/init.d/dae start >/dev/null 2>&1
+	if service_running; then
+		emit_result true started
+	else
+		emit_result false start_failed
+	fi
+}
+
+stop() {
+	/etc/init.d/dae stop >/dev/null 2>&1
+	if service_running; then
+		emit_result false stop_failed
+	else
+		emit_result true stopped
+	fi
+}
+
+restart() {
+	uci -q set "$CONFIG.main.enabled=1"
+	uci -q commit "$CONFIG"
+	/etc/init.d/dae restart >/dev/null 2>&1
+	if service_running; then
+		emit_result true restarted
+	else
+		emit_result false restart_failed
+	fi
+}
+
+enable() {
+	uci -q set "$CONFIG.main.enabled=1"
+	uci -q commit "$CONFIG"
+	/etc/init.d/dae enable >/dev/null 2>&1
+	/etc/init.d/dae start >/dev/null 2>&1
+	if service_running; then
+		emit_result true enabled
+	else
+		emit_result false enable_failed
+	fi
+}
+
+disable() {
+	/etc/init.d/dae disable >/dev/null 2>&1
+	emit_result true disabled
+}
+
+case "$1" in
+	status) status ;;
+	secret) secret ;;
+	start) start ;;
+	stop) stop ;;
+	restart) restart ;;
+	enable) enable ;;
+	disable) disable ;;
+	*) emit_result false invalid_operation ;;
+esac

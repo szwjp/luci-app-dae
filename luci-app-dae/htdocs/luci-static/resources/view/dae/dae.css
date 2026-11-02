@@ -1,0 +1,639 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+/* dae — Apple-style design system.
+   Cards, pill badges, iOS segmented controls and soft-tinted buttons on a
+   translucent surface, so the UI adapts to every LuCI theme (light or dark). */
+
+.dae-page {
+	/* Accent — Apple system blue */
+	--dae-accent-rgb: 0, 122, 255;
+	--dae-accent: rgba(var(--dae-accent-rgb), 0.9);
+	--dae-accent-strong: rgba(var(--dae-accent-rgb), 1);
+	--dae-accent-border: rgba(var(--dae-accent-rgb), 0.35);
+	--dae-accent-soft: rgba(var(--dae-accent-rgb), 0.09);
+	--dae-accent-soft-hover: rgba(var(--dae-accent-rgb), 0.16);
+
+	/* Status — Apple system green / red */
+	--dae-green: #34c759;
+	--dae-red: #ff3b30;
+	--dae-orange: #ff9500;
+
+	/* Surfaces (translucent → adapts to any theme) */
+	--dae-card-bg: rgba(128, 128, 128, 0.04);
+	--dae-card-border: rgba(128, 128, 128, 0.14);
+	--dae-field-bg: rgba(128, 128, 128, 0.05);
+	--dae-field-border: rgba(128, 128, 128, 0.22);
+	--dae-hover: rgba(128, 128, 128, 0.08);
+	--dae-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+	--dae-shadow-hover: 0 8px 28px rgba(0, 0, 0, 0.08);
+	--dae-muted: rgba(74, 86, 106, 0.62);
+
+	--dae-radius: 14px;
+	--dae-radius-sm: 9px;
+	--dae-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+		"Hiragino Sans GB", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+	--dae-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+		"Liberation Mono", monospace;
+
+	font-family: var(--dae-font);
+	width: 100%;
+	min-width: 0;
+	box-sizing: border-box;
+}
+
+.dae-page,
+.dae-page * {
+	box-sizing: border-box;
+}
+
+/* LuCI themes (Argon/Bootstrap) set #view>div:first-child and .cbi-map to flex;
+   force block so our card/segmented-control layout behaves identically across
+   themes (ID selector specificity requires !important). */
+.cbi-map.dae-page {
+	display: block !important;
+}
+
+/* ---------- Hidden attribute guard ---------- */
+
+.dae-page [hidden] {
+	display: none !important;
+}
+
+/* ---------- Page header ---------- */
+
+.dae-header {
+	margin: 4px 0 18px;
+}
+
+.dae-header h2 {
+	margin: 0;
+	padding: 0;
+	font-size: 26px;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	line-height: 1.15;
+	background: transparent !important;
+	box-shadow: none !important;
+	border-radius: 0 !important;
+}
+
+.dae-header-sub {
+	margin: 6px 0 0;
+	font-size: 13px;
+	line-height: 1.5;
+	color: var(--dae-muted);
+	max-width: 68ch;
+}
+
+/* ---------- Cards ---------- */
+
+.dae-page .cbi-section,
+.dae-page .cbi-section-node {
+	background: transparent !important;
+	border: 0 !important;
+	box-shadow: none !important;
+	margin: 0;
+	padding: 0;
+}
+
+.dae-card {
+	background: var(--dae-card-bg);
+	border: 1px solid var(--dae-card-border);
+	border-radius: var(--dae-radius);
+	padding: 18px 20px;
+	margin-bottom: 16px;
+	box-shadow: var(--dae-shadow);
+	backdrop-filter: blur(6px);
+	transition: box-shadow 0.25s ease;
+}
+
+.dae-card:hover {
+	box-shadow: var(--dae-shadow-hover);
+}
+
+.dae-card-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+	margin-bottom: 12px;
+}
+
+.dae-card-title {
+	margin: 0 0 6px;
+	padding: 0 !important;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	opacity: 0.55;
+	background: transparent !important;
+	box-shadow: none !important;
+	border-radius: 0 !important;
+	width: auto !important;
+}
+
+.dae-card-head .dae-card-title {
+	margin-bottom: 4px;
+}
+
+/* ---------- Status badge (pill) ---------- */
+
+.dae-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	padding: 4px 14px;
+	border-radius: 999px;
+	font-size: 12.5px;
+	font-weight: 600;
+	line-height: 1.3;
+	border: 1px solid transparent;
+	white-space: nowrap;
+}
+
+.dae-badge::before {
+	content: "";
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: currentColor;
+	flex: none;
+}
+
+.dae-badge--run {
+	color: var(--dae-green);
+	border-color: rgba(52, 199, 89, 0.5);
+}
+
+.dae-badge--stop {
+	color: var(--dae-red);
+	border-color: rgba(255, 59, 48, 0.55);
+}
+
+.dae-badge--idle {
+	color: var(--dae-muted);
+	border-color: rgba(128, 128, 128, 0.35);
+}
+
+/* ---------- Buttons ---------- */
+
+.dae-page .cbi-button {
+	font-family: var(--dae-font);
+	font-size: 13px !important;
+	font-weight: 500;
+	line-height: 1.35 !important;
+	min-height: 0 !important;
+	height: auto !important;
+	padding: 7px 16px !important;
+	border-radius: 10px !important;
+	border: 1px solid rgba(128, 128, 128, 0.32) !important;
+	background: transparent !important;
+	color: inherit !important;
+	box-shadow: none !important;
+	cursor: pointer;
+	white-space: nowrap;
+	transition: background-color 0.18s ease, border-color 0.18s ease,
+		opacity 0.18s ease, transform 0.12s ease;
+}
+
+.dae-page .cbi-button:hover {
+	background: var(--dae-hover) !important;
+}
+
+.dae-page .cbi-button:active {
+	transform: scale(0.98);
+}
+
+.dae-page .cbi-button:disabled {
+	opacity: 0.42;
+	cursor: not-allowed;
+}
+
+/* Primary — soft Apple blue */
+.dae-page .cbi-button-action {
+	border-color: var(--dae-accent-border) !important;
+	color: var(--dae-accent) !important;
+	background: var(--dae-accent-soft) !important;
+}
+
+.dae-page .cbi-button-action:hover {
+	background: var(--dae-accent-soft-hover) !important;
+	border-color: var(--dae-accent) !important;
+}
+
+/* Positive — soft green */
+.dae-page .cbi-button-positive {
+	border-color: rgba(52, 199, 89, 0.5) !important;
+	color: var(--dae-green) !important;
+	background: rgba(52, 199, 89, 0.09) !important;
+}
+
+.dae-page .cbi-button-positive:hover {
+	background: rgba(52, 199, 89, 0.16) !important;
+	border-color: var(--dae-green) !important;
+}
+
+/* Negative — soft red */
+.dae-page .cbi-button-negative {
+	border-color: rgba(255, 59, 48, 0.5) !important;
+	color: var(--dae-red) !important;
+	background: rgba(255, 59, 48, 0.08) !important;
+}
+
+.dae-page .cbi-button-negative:hover {
+	background: rgba(255, 59, 48, 0.15) !important;
+	border-color: var(--dae-red) !important;
+}
+
+/* ---------- Button groups ---------- */
+
+.dae-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+}
+
+}
+
+}
+
+/* ---------- Meta line (mono, muted) ---------- */
+
+.dae-meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 14px;
+	font-family: var(--dae-mono);
+	font-size: 12px;
+	color: var(--dae-muted);
+}
+
+.dae-meta-item {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 5px;
+}
+
+.dae-meta-label {
+	opacity: 0.55;
+}
+
+/* ---------- Forms / fields ---------- */
+
+.dae-page .cbi-value {
+	padding: 9px 0;
+	margin: 0;
+	border: 0;
+	background: transparent;
+}
+
+.dae-page .cbi-value-title {
+	float: none;
+	display: block;
+	width: auto;
+	padding: 0 0 6px;
+	font-size: 13px;
+	font-weight: 600;
+	opacity: 0.85;
+}
+
+.dae-page .cbi-value-field {
+	display: block;
+	width: auto;
+	padding: 0;
+	min-width: 0;
+}
+
+.dae-page .cbi-value-description {
+	font-size: 12px;
+	color: var(--dae-muted);
+	line-height: 1.5;
+	padding-top: 6px;
+}
+
+.dae-page .cbi-input-text,
+.dae-page .cbi-input-password,
+.dae-page .cbi-input-select,
+.dae-page .cbi-input-textarea,
+.dae-page select,
+.dae-page input[type="text"],
+.dae-page input[type="password"],
+.dae-page input[type="number"],
+.dae-page input[type="url"],
+.dae-page textarea {
+	width: 100%;
+	max-width: 100%;
+	min-width: 0;
+	box-sizing: border-box;
+	font-family: var(--dae-font);
+	font-size: 13.5px;
+	height: 38px;
+	padding: 7px 12px;
+	border: 1px solid var(--dae-field-border);
+	border-radius: var(--dae-radius-sm);
+	background: var(--dae-field-bg);
+	color: inherit;
+	transition: border-color 0.18s ease, box-shadow 0.18s ease,
+		background-color 0.18s ease;
+}
+
+.dae-page textarea,
+.dae-page .cbi-input-textarea {
+	height: auto;
+	min-height: 96px;
+	resize: vertical;
+	font-family: var(--dae-mono);
+	line-height: 1.5;
+}
+
+.dae-page .cbi-input-text:focus,
+.dae-page .cbi-input-password:focus,
+.dae-page .cbi-input-select:focus,
+.dae-page .cbi-input-textarea:focus,
+.dae-page select:focus,
+.dae-page input[type="text"]:focus,
+.dae-page input[type="password"]:focus,
+.dae-page input[type="number"]:focus,
+.dae-page input[type="url"]:focus,
+.dae-page textarea:focus {
+	outline: 0;
+	border-color: var(--dae-accent-border);
+	box-shadow: 0 0 0 3px var(--dae-accent-soft);
+	background: transparent;
+}
+
+.dae-page .cbi-input-text::placeholder,
+.dae-page textarea::placeholder,
+.dae-page input::placeholder {
+	opacity: 0.5;
+}
+
+/* Comfortable field widths inside full-width cards */
+.dae-page .cbi-value-field .cbi-input-text,
+.dae-page .cbi-value-field .cbi-input-password,
+.dae-page .cbi-value-field input[type="number"],
+.dae-page .cbi-value-field input[type="url"],
+.dae-page .cbi-value-field input[type="text"],
+.dae-page .cbi-value-field .cbi-input-select,
+.dae-page .cbi-value-field select,
+.dae-page .cbi-value-field input[type="file"] {
+	max-width: 400px;
+}
+
+.dae-page .cbi-value-field textarea,
+.dae-page .cbi-value-field .cbi-input-textarea {
+	max-width: 640px;
+}
+
+/* ---------- iOS toggle switch (boot-enabled checkbox) ---------- */
+
+.dae-page input[type="checkbox"] {
+	-webkit-appearance: none;
+	appearance: none;
+	position: relative;
+	width: 46px;
+	height: 27px;
+	margin: 0;
+	border: 0;
+	border-radius: 999px;
+	background: rgba(128, 128, 128, 0.3);
+	cursor: pointer;
+	transition: background-color 0.2s ease, opacity 0.2s ease;
+	flex: none;
+}
+
+.dae-page input[type="checkbox"]::before {
+	content: "";
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 23px;
+	height: 23px;
+	border-radius: 50%;
+	background: #fff;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+	transition: transform 0.2s ease;
+}
+
+.dae-page input[type="checkbox"]:checked {
+	background: var(--dae-green);
+}
+
+.dae-page input[type="checkbox"]:checked::before {
+	transform: translateX(19px);
+}
+
+.dae-page input[type="checkbox"]:focus-visible {
+	outline: 2px solid var(--dae-accent);
+	outline-offset: 3px;
+}
+
+.dae-page input[type="checkbox"]:disabled {
+	opacity: 0.42;
+	cursor: not-allowed;
+}
+
+/* ---------- Notes & alerts ---------- */
+
+.dae-note {
+	font-size: 12.5px;
+	line-height: 1.55;
+	color: var(--dae-muted);
+	max-width: 72ch;
+}
+
+.dae-page .alert-message {
+	font-size: 12.5px;
+	line-height: 1.55;
+	padding: 10px 14px;
+	border-radius: var(--dae-radius-sm);
+	background: rgba(255, 59, 48, 0.08);
+	border: 1px solid rgba(255, 59, 48, 0.25);
+	color: inherit;
+	margin: 10px 0;
+	list-style: none;
+}
+
+.dae-page .alert-message li {
+	margin: 4px 0;
+}
+
+.dae-status-msg {
+	font-size: 12.5px;
+	color: var(--dae-muted);
+	min-height: 1.4em;
+	margin: 10px 0 0;
+}
+
+.dae-status-msg:empty {
+	margin: 0;
+}
+
+/* ---------- Disclosure (details/summary) ---------- */
+
+.dae-page details {
+	margin-top: 12px;
+}
+
+.dae-page details > summary {
+	min-height: 36px;
+	padding: 8px 0;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+	opacity: 0.85;
+	user-select: none;
+	list-style: none;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.dae-page details > summary::-webkit-details-marker {
+	display: none;
+}
+
+.dae-page details > summary::before {
+	content: "";
+	width: 7px;
+	height: 7px;
+	border-right: 1.5px solid currentColor;
+	border-bottom: 1.5px solid currentColor;
+	transform: rotate(-45deg);
+	transition: transform 0.2s ease;
+	opacity: 0.6;
+	flex: none;
+	margin-top: -3px;
+}
+
+.dae-page details[open] > summary::before {
+	transform: rotate(45deg);
+	margin-top: 3px;
+}
+
+.dae-page details > summary:hover {
+	opacity: 1;
+}
+
+}
+
+/* ---------- Page actions footer ---------- */
+
+.dae-page .cbi-page-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	background: transparent;
+	border: 0;
+	padding: 12px 0 0;
+	margin: 0;
+}
+
+/* ---------- Responsive ---------- */
+
+}
+
+/* ---------- Dark mode ---------- */
+
+body.dark .dae-page,
+html.dark .dae-page,
+body[data-theme="dark"] .dae-page,
+html[data-theme="dark"] .dae-page,
+body[data-bs-theme="dark"] .dae-page,
+html[data-bs-theme="dark"] .dae-page,
+body[data-darkmode="1"] .dae-page,
+html[data-darkmode="1"] .dae-page,
+body[data-darkmode="true"] .dae-page,
+html[data-darkmode="true"] .dae-page {
+	--dae-green: #30d158;
+	--dae-red: #ff453a;
+	--dae-orange: #ff9f0a;
+	--dae-card-bg: rgba(255, 255, 255, 0.04);
+	--dae-card-border: rgba(255, 255, 255, 0.1);
+	--dae-field-bg: rgba(255, 255, 255, 0.05);
+	--dae-field-border: rgba(255, 255, 255, 0.16);
+	--dae-hover: rgba(255, 255, 255, 0.08);
+	--dae-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+	--dae-shadow-hover: 0 10px 32px rgba(0, 0, 0, 0.45);
+	--dae-muted: rgba(200, 210, 224, 0.6);
+}
+
+}
+
+}
+
+/* ---------- Reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+	.dae-page .cbi-button,
+	.dae-page .cbi-button:active,
+	.dae-card,
+	.dae-page input[type="checkbox"],
+	.dae-page input[type="checkbox"]::before,
+	.dae-page details > summary::before {
+		transition: none !important;
+		transform: none !important;
+	}
+}
+
+/* ---------- API secret row ---------- */
+
+.dae-secret-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	margin: 4px 0 10px;
+}
+
+.dae-secret {
+	flex: 1 1 260px;
+	min-width: 0;
+	padding: 8px 12px;
+	border: 1px solid var(--dae-field-border);
+	border-radius: var(--dae-radius-sm);
+	background: var(--dae-field-bg);
+	font-family: var(--dae-mono);
+	font-size: 12.5px;
+	word-break: break-all;
+	user-select: all;
+}
+
+@media (max-width: 640px) {
+	.dae-pkg-row {
+		grid-template-columns: 24px minmax(0, 1fr);
+		row-gap: 4px;
+	}
+
+	.dae-pkg-row .dae-pkg-icon {
+		grid-column: 1;
+		grid-row: 1;
+	}
+
+	.dae-pkg-row .dae-pkg-name {
+		grid-column: 2;
+		grid-row: 1;
+	}
+
+	.dae-pkg-row .dae-pkg-meta {
+		grid-column: 2;
+		grid-row: 2;
+		white-space: normal;
+	}
+
+	.dae-pkg-row > span:nth-child(4) {
+		display: none;
+	}
+
+	.dae-pkg-row > button,
+	.dae-pkg-row > span:last-child {
+		grid-column: 2;
+		grid-row: 3;
+		justify-self: start;
+	}
+
+body.dark .dae-page,

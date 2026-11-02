@@ -21,7 +21,7 @@ PROG=/usr/bin/dae
 API_FILE=/etc/dae/api.dae
 
 start_service() {
-	local enabled config_file api_listen api_secret api_write ui_path log_level
+	local enabled config_file api_listen api_secret api_write ui_path
 	config_load "$CONFIG"
 	config_get_bool enabled main enabled 0
 	[ "$enabled" -eq "1" ] || return 1
@@ -31,7 +31,6 @@ start_service() {
 	config_get api_secret main api_secret ""
 	config_get api_write main api_write "0"
 	config_get ui_path main ui_path "/usr/share/dae/doona"
-	config_get log_level main log_level "info"
 
 	write_api_section "$api_listen" "$api_secret" "$api_write" "$ui_path" || return 1
 
@@ -47,37 +46,122 @@ start_service() {
 	procd_close_instance
 }
 
-# A listener on a non-loopback address needs a secret. When UCI carries none,
-# generate one and write it back, so the panel can be used right after the
-# first start without an extra step.
-write_api_section() {
-	local listen secret write ui
-	listen="$1"; secret="$2"; write="$3"; ui="$4"
+# dae parses the listener address itself and wants a numeric IP: a host name
+# makes it refuse to start. "localhost" is the one name worth accepting, so it
+# is mapped to the loopback address here.
+normalize_listen() {
+	local listen="$1" host port
 
 	case "$listen" in
-		127.0.0.1:*|localhost:*|::1:*) ;;
+		*:*)
+			host="${listen%:*}"
+			port="${listen##*:}"
+			;;
 		*)
-			if [ -z "$secret" ]; then
-				# hex from /dev/urandom: a minimal busybox has neither base64
-				# nor od, and hex needs no quoting in the configuration file.
-				secret="$(head -c 32 /dev/urandom | md5sum | cut -d' ' -f1)"
-				if [ -z "$secret" ]; then
-					logger -t dae "no api secret and no random source; set dae.main.api_secret by hand"
-					return 1
-				fi
-				uci -q set "$CONFIG.main.api_secret=$secret"
-				uci -q commit "$CONFIG"
-				logger -t dae "generated an api secret; read it with: uci show $CONFIG"
-			fi
+			echo "$listen"
+			return
 			;;
 	esac
+
+	case "$host" in
+		localhost) host="127.0.0.1" ;;
+	esac
+
+	echo "$host:$port"
+}
+
+# The listener address has to survive dae's own check: a numeric address and a
+# port in 1..65535. A wrong address is reported here, instead of leaving dae
+# to fail with a message nobody reads.
+check_listen() {
+	local listen="$1" host port
+
+	host="${listen%:*}"
+	port="${listen##*:}"
+	if [ "$host" = "$listen" ]; then
+		echo "the address carries no port"
+		return 1
+	fi
+
+	case "$port" in
+		''|*[!0-9]*)
+			echo "the port is not a number"
+			return 1
+			;;
+	esac
+	if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+		echo "the port is out of range"
+		return 1
+	fi
+
+	case "$host" in
+		\[*\]*)
+			host="${host#\[}"
+			host="${host%\]}"
+			;;
+	esac
+
+	case "$host" in
+		'')
+			echo "the address has no host"
+			return 1
+			;;
+		*:*)
+			case "$host" in
+				*[!0-9a-fA-F:]*)
+					echo "the host is not a numeric address"
+					return 1
+					;;
+			esac
+			;;
+		*)
+			case "$host" in
+				*[!0-9.]*)
+					echo "the host is not a numeric address"
+					return 1
+					;;
+			esac
+			;;
+	esac
+
+	return 0
+}
+
+# The listener needs a secret whatever it is bound to. dae refuses to start
+# without one unless the listener is loopback and anonymous access is allowed
+# explicitly, and the panel authenticates either way. A secret that is missing
+# is generated once and written back, so the panel works right after the first
+# start.
+write_api_section() {
+	local listen secret write ui reason
+
+	listen="$1"; secret="$2"; write="$3"; ui="$4"
+
+	listen="$(normalize_listen "$listen")"
+	if ! reason="$(check_listen "$listen")"; then
+		logger -t dae "invalid api listener '$listen': $reason"
+		return 1
+	fi
+
+	if [ -z "$secret" ]; then
+		# hex from /dev/urandom: a minimal busybox has neither base64
+		# nor od, and hex needs no quoting in the configuration file.
+		secret="$(head -c 32 /dev/urandom | md5sum | cut -d' ' -f1)"
+		if [ -z "$secret" ]; then
+			logger -t dae "no api secret and no random source; set dae.main.api_secret by hand"
+			return 1
+		fi
+		uci -q set "$CONFIG.main.api_secret=$secret"
+		uci -q commit "$CONFIG"
+		logger -t dae "generated an api secret; read it with: uci show $CONFIG"
+	fi
 
 	mkdir -p "$(dirname "$API_FILE")"
 	{
 		echo "api {"
 		echo "  enabled: true"
 		echo "  listen: '$listen'"
-		[ -n "$secret" ] && echo "  secret: '$secret'"
+		echo "  secret: '$secret'"
 		[ "$write" = "1" ] && echo "  config_write: true"
 		# The panel is a separate package. Point at it only when it is there.
 		if [ -n "$ui" ] && [ -d "$ui" ]; then

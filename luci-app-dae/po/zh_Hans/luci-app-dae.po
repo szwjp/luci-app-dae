@@ -1,18 +1,162 @@
 msgid ""
 msgstr ""
+"Project-Id-Version: luci-app-dae\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-02 10:30+0800\n"
+"PO-Revision-Date: 2026-11-02 10:30+0800\n"
+"Last-Translator: szwjp <szwjp@users.noreply.github.com>\n"
+"Language-Team: Chinese (Simplified)\n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
 
-msgid "dae Engine"
+msgid "Could not read the dae service state."
+msgstr "读取 dae 服务状态失败。"
+
+msgid "Running"
+msgstr "运行中"
+
+msgid "Stopped"
+msgstr "已停止"
+
+msgid "Disabled"
+msgstr "未启用"
+
+msgid "Open panel"
+msgstr "打开面板"
+
+msgid "Stop"
+msgstr "停止"
+
+msgid "Start"
+msgstr "启动"
+
+msgid "Restart"
+msgstr "重启"
+
+msgid "Status"
+msgstr "状态"
+
+msgid "Listener"
+msgstr "监听地址"
+
+msgid "Port"
+msgstr "端口"
+
+msgid "Panel"
+msgstr "面板目录"
+
+msgid "The dae service is disabled."
+msgstr "dae 服务当前未启用。"
+
+msgid "The dae service is not running."
+msgstr "dae 服务未运行。"
+
+msgid "The panel files are missing. Reinstall the luci-app-dae package."
+msgstr "面板文件缺失，请重新安装 luci-app-dae 软件包。"
+
+msgid "The panel is not reachable from this browser."
+msgstr "当前浏览器访问不到面板。"
+
+msgid "Panel address"
+msgstr "面板地址"
+
+msgid "Service"
+msgstr "服务"
+
+msgid "Start at boot"
+msgstr "开机自启"
+
+msgid "Configuration write"
+msgstr "允许写入配置"
+
+msgid "Enabled"
+msgstr "已开启"
+
+msgid "Configuration write lets the panel save changes to the dae configuration files."
+msgstr "开启后，面板可以通过 API 把改动写回 dae 的配置文件。"
+
+msgid "Loading…"
+msgstr "读取中…"
+
+msgid "Show"
+msgstr "显示"
+
+msgid "Copy"
+msgstr "复制"
+
+msgid "The secret is not available to this session."
+msgstr "当前会话无权读取密钥。"
+
+msgid "Copied"
+msgstr "已复制"
+
+msgid "API secret"
+msgstr "API 密钥"
+
+msgid "The panel asks for this secret the first time it is opened. It is also readable with: uci get dae.main.api_secret"
+msgstr "面板首次打开时会要求输入这个密钥。也可以用 uci get dae.main.api_secret 读取。"
+
+msgid "Working…"
+msgstr "处理中…"
+
+msgid "The operation completed."
+msgstr "操作已完成。"
+
+msgid "The operation failed."
+msgstr "操作失败。"
+
+msgid "dae"
 msgstr "dae 引擎"
 
-msgid ""
-"The doona panel serves the dae engine over its native HTTP API. It runs in "
-"the browser, so this page only frames it."
-msgstr ""
-"doona 面板通过 dae 的原生 HTTP API 驱动引擎。它在浏览器里运行，本页只是把它框起来。"
+msgid "The doona panel drives the dae engine over its native HTTP API. dae serves the panel itself; this page shows the service state and opens the panel."
+msgstr "doona 面板通过 dae 的原生 HTTP API 驱动引擎。面板由 dae 自己托管，本页显示服务状态并负责打开面板。"
 
-msgid ""
-"The panel asks for the API secret on first use. Read it with: uci get "
-"dae.main.api_secret"
-msgstr ""
-"面板首次打开时会要求输入 API 密钥。查看方式：uci get dae.main.api_secret"
+msgid "The dae service is enabled but not running."
+msgstr "dae 服务已启用，但当前未运行。"
+
+msgid "The API secret is missing. Restart the service to generate one."
+msgstr "缺少 API 密钥，重启服务即可自动生成。"
+
+msgid "The API listens on the router itself, so the panel is not reachable from another machine."
+msgstr "API 只监听路由器本机，其他机器访问不到面板。"
+
+msgid "The API listener address is invalid. Check dae.main.api_listen."
+msgstr "API 监听地址非法，请检查 dae.main.api_listen。"
+
+msgid "The dae service started."
+msgstr "dae 服务已启动。"
+
+msgid "The dae service stopped."
+msgstr "dae 服务已停止。"
+
+msgid "The dae service restarted."
+msgstr "dae 服务已重启。"
+
+msgid "The dae service starts at boot."
+msgstr "dae 服务已设为开机自启。"
+
+msgid "The dae service no longer starts at boot."
+msgstr "dae 服务已取消开机自启。"
+
+msgid "The dae service did not start. Check the system log."
+msgstr "dae 服务启动失败，请查看系统日志。"
+
+msgid "The dae service did not stop. Check the system log."
+msgstr "dae 服务停止失败，请查看系统日志。"
+
+msgid "The dae service did not restart. Check the system log."
+msgstr "dae 服务重启失败，请查看系统日志。"
+
+msgid "The dae service was not enabled. Check the system log."
+msgstr "dae 服务启用失败，请查看系统日志。"
+
+msgid "The operation is not known."
+msgstr "未知操作。"
+
+msgid "The dae service reported an issue."
+msgstr "dae 服务报告了一个问题。"
+
+msgid "The backend did not confirm the operation."
+msgstr "后端没有确认这次操作。"

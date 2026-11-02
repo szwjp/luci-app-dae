@@ -1,2 +1,5 @@
 out/
 .DS_Store
+
+# The daemon is fetched from the engine release, never committed.
+dae/assets/

@@ -11,7 +11,7 @@
 
 PKG_NAME:=luci-app-dae
 PKG_VERSION:=2026.11.01
-PKG_RELEASE:=4
+PKG_RELEASE:=5
 
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>
@@ -29,4 +29,6 @@ PKG_ARCH:=noarch
 # The doona panel, staged to the directory dae's api.ui points at.
 PKG_ASSETS:=assets/doona=usr/share/dae/doona
 
+# The LuCI page reads the state of the service over rpcd, so the package
+# ships a small backend next to the view.
 PKG_CONFFILES:=
