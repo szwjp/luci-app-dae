@@ -72,10 +72,64 @@ uci get dae.main.api_secret
 | `api_write` | `0` | 允许面板通过 API 写配置 |
 | `ui_path` | `/usr/share/dae/doona` | 面板所在目录 |
 | `lan_interface` | 空 | 覆盖 LAN 接口名，默认从 `config.d/global.dae` 读取 |
+| `geo_update` | `1` | 是否每周自动更新地理数据文件 |
+| `geo_update_cron` | `0 2 * * 1` | 自动更新的时间（分 时 日 月 周） |
 
 `api_listen` 必须是**数值地址加端口**（`0.0.0.0:9527`、`192.168.1.1:9527`）。
 `localhost` 会被改写成 `127.0.0.1`，其它主机名不接受——dae 自己要求数值地址，
 写成名字时它会拒绝启动。监听回环地址时面板只在本机可用。
+
+### 地理数据自动更新
+
+规则里 `geosite:` 与 `geoip:` 用到的数据文件是 `v2ray-geoip` / `v2ray-geosite`
+两个包装的 `geoip.dat` 与 `geosite.dat`，位于 `/usr/share/v2ray`。软件包会每周
+一凌晨两点自动更新它们，来源固定为：
+
+```
+https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat
+https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat
+```
+
+更新脚本是 `/usr/bin/dae-geo-update`，cron 条目由 `/etc/init.d/dae-geo-update`
+维护（它排在 `cron` 之前启动，因为 crond 在 crontabs 目录为空时不会起来）。
+手动跑一次：
+
+```sh
+/usr/bin/dae-geo-update
+```
+
+时间可以改：
+
+```sh
+uci set dae.main.geo_update_cron='30 4 * * 0'
+uci commit dae
+/etc/init.d/dae-geo-update restart
+```
+
+关掉自动更新（会把 cron 条目一并撤掉）：
+
+```sh
+uci set dae.main.geo_update=0
+uci commit dae
+/etc/init.d/dae-geo-update start
+```
+
+几点行为值得知道：
+
+* 下载必须带 Range 头。同一个文件同一个节点，普通 GET 实测只有 16KB/s，显式
+  Range 是 MB/s 级别；脚本首次下载一律用显式 Range，续传才用 `curl -C -`。
+* 完整性靠上游同目录的 `<file>.sha256sum` 判定——CDN 的 `content-length` 和
+  `content-range` 不可信。校验不过会重下，最多三轮，仍不过则按大小和文件头
+  放行并在日志里记警告。
+* 换文件后重启 dae（dae 只在启动时读地理数据，`reload` 不重新加载），并确认
+  守护进程真的起来了；没起来就把旧文件放回去再重启一次，避免坏文件把代理
+  整个打挂。
+* 日志在 `/var/log/dae-geo-update.log`，同时进 syslog（`logread | grep
+  dae-geo-update`）。`/var` 是 tmpfs，重启后日志不保留；要长期留档改脚本里的
+  `LOGFILE` 常量。
+* 上一版文件备份在 `/etc/dae/geo-backup/`。
+* 这两个文件归 apk 包所有，`apk upgrade v2ray-geoip v2ray-geosite` 会用 feed
+  里的版本覆盖它们；下一次自动更新会装回更新的版本。
 
 ### ICMP 重定向
 

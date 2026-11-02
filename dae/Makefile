@@ -16,7 +16,7 @@
 
 PKG_NAME:=dae
 PKG_VERSION:=2026.11.02
-PKG_RELEASE:=11
+PKG_RELEASE:=12
 
 PKG_LICENSE:=AGPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>
@@ -29,7 +29,9 @@ PKG_URL:=https://github.com/szwjp/luci-app-dae
 # kernel with BTF built in (/sys/kernel/btf/vmlinux), so no vmlinux-btf package
 # is needed here; a kernel without it needs one before dae can start.
 # The geo packages ship the dat files dae looks up as geoip:/geosite:.
-PKG_DEPENDS:=+ca-bundle +kmod-sched-core +kmod-sched-bpf +kmod-veth +v2ray-geoip +v2ray-geosite
+# The weekly geo update (usr/bin/dae-geo-update) fetches them over https and
+# verifies them against the sha256 the upstream publishes, so it needs curl.
+PKG_DEPENDS:=+ca-bundle +kmod-sched-core +kmod-sched-bpf +kmod-veth +v2ray-geoip +v2ray-geosite +curl
 
 PKG_DESCRIPTION:=dae is an eBPF-based transparent proxy for Linux. This build carries the native HTTP control plane, so a web panel can drive it over the daeuniverse/api-standardize contract.
 
