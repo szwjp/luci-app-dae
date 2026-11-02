@@ -274,10 +274,15 @@ jobs:
 
           在 OpenWrt / ImmortalWrt 上安装（apk）：
 
+          apk v3 的 \`apk add\` 只认本地文件，不接受 URL，所以先把包下载下来再装：
+
           \`\`\`sh
-          apk add --allow-untrusted \\
-            https://github.com/szwjp/luci-app-dae/releases/download/v${TAG_VERSION}/dae-${VERSION}-x86_64.apk \\
+          cd /tmp
+          wget -O dae.apk \\
+            https://github.com/szwjp/luci-app-dae/releases/download/v${TAG_VERSION}/dae-${VERSION}-x86_64.apk
+          wget -O luci-app-dae.apk \\
             https://github.com/szwjp/luci-app-dae/releases/download/v${TAG_VERSION}/luci-app-dae-${PANEL_VERSION}.apk
+          apk add --allow-untrusted ./dae.apk ./luci-app-dae.apk
           \`\`\`
 
           守护进程按架构分发：x86_64、arm64（aarch64_generic）、riscv64（riscv64_generic），
@@ -286,8 +291,10 @@ jobs:
           可选的 LuCI 中文翻译：
 
           \`\`\`sh
-          apk add --allow-untrusted \\
+          cd /tmp
+          wget -O luci-i18n-dae-zh-cn.apk \\
             https://github.com/szwjp/luci-app-dae/releases/download/v${TAG_VERSION}/luci-i18n-dae-zh-cn-${PANEL_VERSION}.apk
+          apk add --allow-untrusted ./luci-i18n-dae-zh-cn.apk
           \`\`\`
 
           服务默认禁用；启用方式：
