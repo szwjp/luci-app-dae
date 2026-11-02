@@ -250,6 +250,15 @@ jobs:
           echo "TAG_VERSION=$TAG_VERSION" >> "$GITHUB_ENV"
           echo "发布版本 v$TAG_VERSION（引擎包 $EXPECTED，面板包 $PANEL）"
 
+      - name: Checksum the packages
+        # The release carries a checksum file: a package that is fetched over
+        # a plain URL can be checked against it before it is installed.
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum *.apk > SHA256SUMS
+          cat SHA256SUMS
+
       - name: Write release notes
         env:
           VERSION: ${{ env.VERSION }}
@@ -283,6 +292,14 @@ jobs:
 
           服务默认禁用；启用方式：
           \`uci set dae.main.enabled=1 && uci commit dae && /etc/init.d/dae start\`
+
+          下载后可以先校验文件是否完整：
+
+          \`\`\`sh
+          sha256sum -c SHA256SUMS
+          \`\`\`
+
+          macOS 没有 sha256sum，用 \`shasum -a 256 -c SHA256SUMS\`。
           EOF
 
       - name: Publish release
@@ -297,8 +314,8 @@ jobs:
           # tag where it is. Deleting the tag would move a published release
           # to another commit, so the same URL would serve other bytes.
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" release/*.apk --clobber
+            gh release upload "$TAG" release/* --clobber
             gh release edit "$TAG" --title "dae + doona panel $TAG" --notes-file notes.md
           else
-            gh release create "$TAG" release/*.apk --title "dae + doona panel $TAG" --notes-file notes.md
+            gh release create "$TAG" release/* --title "dae + doona panel $TAG" --notes-file notes.md
           fi
