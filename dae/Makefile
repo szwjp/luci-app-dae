@@ -15,8 +15,8 @@
 # or later.
 
 PKG_NAME:=dae
-PKG_VERSION:=2026.11.02
-PKG_RELEASE:=12
+PKG_VERSION:=2.1.1
+PKG_RELEASE:=1
 
 PKG_LICENSE:=AGPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>
