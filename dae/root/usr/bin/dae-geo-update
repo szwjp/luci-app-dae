@@ -56,9 +56,15 @@ DIR=/usr/share/v2ray
 LOGFILE=/var/log/dae-geo-update.log
 BACKUP_DIR=/etc/dae/geo-backup
 WORK=/tmp/dae-geo-update.work
+LOCKFILE=/var/lock/dae-geo-update.lock
 HOST=cdn.jsdelivr.net
 REPO=Loyalsoldier/v2ray-rules-dat
 FILES="geosite.dat geoip.dat"
+# A floor for the download, not for the files the packages ship. The two are
+# different things: v2ray-geosite installs a small geosite.dat (a couple of
+# megabytes), while the build this script fetches is ten and more. The floor
+# only ever runs on a file this script downloaded, so it can be set for the
+# latter without rejecting the former.
 MIN_BYTES=5000000
 MAX_BYTES=104857600
 MAX_ROUNDS=3
@@ -159,6 +165,25 @@ enabled || {
 mkdir -p "$WORK" || die "cannot create the work directory $WORK"
 mkdir -p "$BACKUP_DIR" || die "cannot create the backup directory $BACKUP_DIR"
 
+# One run at a time.
+#
+# The work directory is a fixed path, so two runs share it: one overwrites the
+# file the other is still downloading and the sha256 of both stops matching.
+# The failure looks like a broken upstream rather than like a collision, and
+# both runs give up. cron and a hand-started run are the usual pair; a wakeup
+# that makes cron fire a missed job does it too.
+#
+# A lock on the fixed work path is enough: flock is in base, and the file
+# descriptor stays open for the whole run.
+mkdir -p "$(dirname "$LOCKFILE")" 2>/dev/null
+if ! { exec 9>"$LOCKFILE"; } 2>/dev/null; then
+	die "cannot create the lock file $LOCKFILE"
+fi
+if ! flock -n 9; then
+	log "skipped: another update is already running"
+	exit 0
+fi
+
 # Both files are fetched and verified before either is installed: a failure
 # halfway through leaves the running daemon on its old files.
 for f in $FILES; do
@@ -193,8 +218,16 @@ restart_dae() {
 	/etc/init.d/dae restart >/dev/null 2>&1
 }
 
+# Whether the daemon runs, asked of the init script rather than of ubus.
+#
+# The ubus object "dae" belongs to luci-app-dae, while this script belongs to
+# the dae package. The two are installed separately: with the panel package
+# absent or its rpcd backend not loaded, "ubus call dae status" fails, the grep
+# below finds nothing and a daemon that is running perfectly well is reported
+# as down. That would roll the freshly installed geo data back on every run.
+# The init script is always there, so its answer is the one to trust.
 dae_running() {
-	ubus call dae status 2>/dev/null | grep -q '"running": true'
+	/etc/init.d/dae status 2>/dev/null | grep -q '^running$'
 }
 
 restart_dae
