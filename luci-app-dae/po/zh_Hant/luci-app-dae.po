@@ -50,6 +50,9 @@ msgstr "監聽位址"
 msgid "The dae service is disabled."
 msgstr "dae 服務目前未啟用。"
 
+msgid "The dae service is not enabled yet. Press Start to enable and start it."
+msgstr "dae 服務尚未啟用，點「啟動」即可啟用並啟動。"
+
 msgid "The dae service is not running."
 msgstr "dae 服務未執行。"
 
@@ -175,6 +178,12 @@ msgstr "設定寫入失敗，請查看系統記錄。"
 
 msgid "Hide"
 msgstr "隱藏"
+
+msgid "The listener address was not accepted: the service did not come up with it, so the previous address was restored."
+msgstr "監聽位址未被接受：服務未能用它啟動，已還原原位址。"
+
+msgid "The configuration write permission was not accepted: the service did not come up with it, so the previous setting was restored."
+msgstr "寫入設定權限未被接受：服務未能用它啟動，已還原原設定。"
 
 msgid "The configuration write permission was saved and the service was restarted."
 msgstr "設定寫入權限已儲存，服務已重啟。"

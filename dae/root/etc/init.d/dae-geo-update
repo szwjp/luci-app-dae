@@ -45,6 +45,42 @@ update_enabled() {
 	echo "$value"
 }
 
+# Drops the lines this service owns, and nothing else.
+#
+# The entry is recognised by its command word, not by the path appearing
+# anywhere in the line. "grep -v $JOB" removed every line that mentioned the
+# path: an operator's second job started as "/usr/bin/dae-geo-update
+# --something", or a comment about it, all disappeared.
+#
+# The command word alone is not enough either: a job the operator starts with
+# arguments is a different job from the bare one this service writes, and it
+# has to survive. So the line only goes when the command is this script and
+# nothing but the output redirection follows it, which is exactly the shape
+# install_job writes.
+#
+# The five schedule fields come first and may hold any of 0-9 * , - / ? # and
+# the day names, so the first field that is not one of those is the command.
+drop_job() {
+	awk -v job="$JOB" '
+		{
+			cmd = ""; rest = ""
+			for (i = 1; i <= NF; i++) {
+				if ($i ~ /^[0-9*\/,?#-]+$/ || tolower($i) ~ /^(mon|tue|wed|thu|fri|sat|sun)(-(mon|tue|wed|thu|fri|sat|sun))?$/)
+					continue
+				cmd = $i
+				for (j = i + 1; j <= NF; j++)
+					rest = rest " " $j
+				break
+			}
+			# The redirection install_job appends is not an argument.
+			sub(/[ \t]*>[ \t]*\/dev\/null[ \t]+2>&1[ \t]*$/, "", rest)
+			sub(/[ \t]+$/, "", rest)
+			if (cmd != job || rest != "")
+				print
+		}
+	' "$CRONTAB"
+}
+
 # The entry is found by its program path, so a line left over from an earlier
 # schedule is replaced instead of piling up.
 install_job() {
@@ -53,7 +89,7 @@ install_job() {
 	touch "$CRONTAB" || return 1
 	chmod 600 "$CRONTAB"
 
-	grep -v "$JOB" "$CRONTAB" > "$CRONTAB.new" 2>/dev/null
+	drop_job > "$CRONTAB.new" 2>/dev/null
 	line="$(schedule) $JOB >/dev/null 2>&1"
 	echo "$line" >> "$CRONTAB.new"
 	mv "$CRONTAB.new" "$CRONTAB" || return 1
@@ -64,7 +100,7 @@ install_job() {
 
 remove_job() {
 	[ -f "$CRONTAB" ] || return 0
-	grep -v "$JOB" "$CRONTAB" > "$CRONTAB.new" 2>/dev/null
+	drop_job > "$CRONTAB.new" 2>/dev/null
 	mv "$CRONTAB.new" "$CRONTAB" 2>/dev/null
 	chmod 600 "$CRONTAB" 2>/dev/null
 	return 0

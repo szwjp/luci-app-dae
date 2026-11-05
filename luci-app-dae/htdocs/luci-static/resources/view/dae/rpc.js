@@ -134,8 +134,16 @@ function splitListen(listen) {
  *     another machine cannot reach.
  *
  * The API checks the Host header: with a wildcard bind it accepts an IP
- * literal or "localhost" only, so a router that was reached by name falls
- * back to the LAN address the backend reports.
+ * literal or "localhost" only, so a router that was reached by name cannot use
+ * the browser's own host.
+ *
+ * Which address that leaves is not something the backend can know: a router
+ * with an uplink and a LAN has an address on each, and only the browser knows
+ * which one it can reach. The backend therefore reports a list of candidates
+ * and the page takes the first one that belongs to the network the browser is
+ * already talking to. Guessing with the LAN address is what made the button
+ * point at 192.168.2.1 for a browser that had reached the router at
+ * 192.168.1.140.
  */
 function panelUrl(status) {
 	if (!status || !status.running || !status.panel_available)
@@ -152,7 +160,7 @@ function panelUrl(status) {
 	if (isWildcard(bound)) {
 		host = browserHost;
 		if (!isIpLiteral(host) && host !== 'localhost')
-			host = status.lan_address || '';
+			host = pickReachableAddress(status, browserHost);
 	}
 	else {
 		host = bound;
@@ -168,10 +176,49 @@ function panelUrl(status) {
 	return 'http://' + authorityHost(host) + ':' + port + '/ui/';
 }
 
+// The first reported address that is close enough to the browser to be worth
+// trying, or the first reported address when none is.
+//
+// "Close enough" means the same /24: a router answers on several networks, and
+// the one the browser sits in is the one it can always reach. Without a list,
+// from an older backend, the single lan_address is used as before.
+function pickReachableAddress(status, browserHost) {
+	const candidates = Array.isArray(status.lan_addresses) && status.lan_addresses.length
+		? status.lan_addresses.filter(isIpLiteral)
+		: [];
+	if (!candidates.length && status.lan_address)
+		candidates.push(status.lan_address);
+
+	if (!candidates.length)
+		return '';
+
+	const prefixOf = function(host) {
+		const bare = String(host || '').replace(/^\[|\]$/g, '');
+		const parts = bare.split('.');
+		return parts.length === 4 ? parts.slice(0, 3).join('.') : null;
+	};
+
+	const browserPrefix = isIpLiteral(browserHost) ? prefixOf(browserHost) : null;
+	if (browserPrefix) {
+		const sameNetwork = candidates.find(function(address) {
+			return prefixOf(address) === browserPrefix;
+		});
+		if (sameNetwork)
+			return sameNetwork;
+	}
+
+	return candidates[0];
+}
+
 function statusIssue(token) {
 	const messages = {
 		disabled: _('The dae service is disabled.'),
 		service_not_running: _('The dae service is enabled but not running.'),
+		// The secret is created by the first start, but only a start that the
+		// init script is allowed to perform: a disabled service is not started
+		// at all, so "restart the service" was advice that did nothing on a
+		// fresh install. The page only ever shows this after the service was
+		// enabled, where starting it really does generate the secret.
 		secret_missing: _('The API secret is missing. Restart the service to generate one.'),
 		panel_missing: _('The panel files are missing. Reinstall the luci-app-dae package.'),
 		loopback_listener: _('The API listens on the router itself, so the panel is not reachable from another machine.'),
@@ -188,8 +235,10 @@ function statusIssue(token) {
 		listener_applied: _('The listener address was saved and the service was restarted.'),
 		listener_saved: _('The listener address was saved. It takes effect at the next start.'),
 		listener_invalid: _('The listener address is invalid. Use a numeric address and a port between 1 and 65535.'),
+		listener_reverted: _('The listener address was not accepted: the service did not come up with it, so the previous address was restored.'),
 		api_write_applied: _('The configuration write permission was saved and the service was restarted.'),
 		api_write_saved: _('The configuration write permission was saved. It takes effect at the next start.'),
+		api_write_reverted: _('The configuration write permission was not accepted: the service did not come up with it, so the previous setting was restored.'),
 		invalid_value: _('The value is not valid.'),
 		invalid_request: _('The request was not understood.'),
 		settings_write_failed: _('The settings could not be written. Check the system log.'),

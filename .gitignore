@@ -3,3 +3,6 @@ out/
 
 # The daemon is fetched from the engine release, never committed.
 dae/assets/
+
+# Review reports and other local notes stay on this machine.
+docs/

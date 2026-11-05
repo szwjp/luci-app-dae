@@ -102,7 +102,13 @@ start_service() {
 	local enabled config_file api_listen api_secret api_write ui_path device
 	config_load "$CONFIG"
 	config_get_bool enabled main enabled 0
-	[ "$enabled" -eq "1" ] || return 1
+	if [ "$enabled" -ne "1" ]; then
+		# The daemon will not run, so whatever a killed instance left
+		# behind has to be put back: a stale state file would otherwise
+		# keep ICMP redirects switched off for the whole system.
+		redirects_restore
+		return 1
+	fi
 
 	config_get config_file main config_file "/etc/dae/config.dae"
 	config_get api_listen main api_listen "0.0.0.0:9527"
@@ -125,6 +131,21 @@ start_service() {
 	procd_set_param respawn 3600 5 5
 	procd_set_param limits nofile="1048576 1048576"
 	procd_close_instance
+}
+
+# rc.common turns the return value of its start() into the exit code of the
+# init script, and the one from start_service is lost on the way: the procd
+# wrapper closes the service object afterwards and that close is the last
+# command. A start that did not bring the daemon up would then leave exit code
+# 0 behind, which reads as success to every caller. rc.common calls this hook
+# right after start_service and returns its result, so the real outcome is
+# reported from here.
+service_started() {
+	local enabled
+	config_load "$CONFIG"
+	config_get_bool enabled main enabled 0
+	[ "$enabled" -eq "1" ] || return 1
+	return 0
 }
 
 # dae parses the listener address itself and wants a numeric IP: a host name
@@ -232,8 +253,15 @@ write_api_section() {
 			logger -t dae "no api secret and no random source; set dae.main.api_secret by hand"
 			return 1
 		fi
-		uci -q set "$CONFIG.main.api_secret=$secret"
-		uci -q commit "$CONFIG"
+		# The secret has to survive a reboot, or the next start generates
+		# a different one and every panel session and saved secret stops
+		# working. The api file alone is not enough: it is rewritten on
+		# every start. A write that fails is fatal, because a daemon that
+		# comes up with a secret nobody can read is useless.
+		if ! uci -q set "$CONFIG.main.api_secret=$secret" || ! uci -q commit "$CONFIG"; then
+			logger -t dae "cannot save the generated api secret to $CONFIG; set $CONFIG.main.api_secret by hand"
+			return 1
+		fi
 		logger -t dae "generated an api secret; read it with: uci show $CONFIG"
 	fi
 
@@ -261,6 +289,21 @@ write_api_section() {
 stop_service() {
 	rm -f "$API_FILE"
 	redirects_restore
+}
+
+# A daemon that was killed outright never runs stop_service, so the state file
+# and the disabled redirects it left behind outlive it. procd restarts the
+# daemon and start_service writes the file again with the original values, so
+# the window is short; but the window is not always closed. When the daemon
+# stays down, the redirects stay off for the whole system. boot() runs before
+# anything else at startup, so this is where the leftovers are cleared: with no
+# running daemon nothing needs them switched off.
+boot() {
+	local enabled
+	config_load "$CONFIG"
+	config_get_bool enabled main enabled 0
+	[ "$enabled" -eq "1" ] || redirects_restore
+	start "$@"
 }
 
 service_triggers() {
