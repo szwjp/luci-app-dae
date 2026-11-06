@@ -298,11 +298,56 @@ stop_service() {
 # stays down, the redirects stay off for the whole system. boot() runs before
 # anything else at startup, so this is where the leftovers are cleared: with no
 # running daemon nothing needs them switched off.
+# S99 runs before the WAN is up: pppd brings pppoe-wan up a few seconds later,
+# and dae attaches its eBPF programs to the interfaces the moment it starts.
+# Started that early it hooks br-lan while the default route does not exist yet,
+# and every packet it hands back to the LAN fails with "network is unreachable" —
+# the whole LAN loses its internet, not just the proxied part. Observed on the
+# first reboot after the upgrade: dae at 08:11:12, pppoe-wan at 08:11:20, and
+# from 08:11:42 on the LAN had no connectivity at all until dae was stopped.
+#
+# So at boot the daemon is only brought up once the WAN interface it is
+# configured to use actually exists. The check is cheap and reads the same
+# configuration the daemon does; the wait is bounded, because a router whose
+# uplink never comes up must still end up with a running dae once the operator
+# fixes it by hand.
+wan_interface() {
+	local interface config_file
+
+	config_get interface main wan_interface ""
+	if [ -n "$interface" ]; then
+		printf '%s\n' "$interface"
+		return 0
+	fi
+
+	config_get config_file main config_file "/etc/dae/config.dae"
+	interface="$(sed -n 's/^[[:space:]]*wan_interface:[[:space:]]*"\{0,1\}\([^"[:space:]#]*\).*/\1/p' \
+		"$(dirname "$config_file")"/config.d/*.dae "$config_file" 2>/dev/null | head -n 1)"
+	[ "$interface" = "auto" ] && interface=""
+	printf '%s\n' "$interface"
+}
+
 boot() {
-	local enabled
+	local enabled device tries i
+
 	config_load "$CONFIG"
 	config_get_bool enabled main enabled 0
-	[ "$enabled" -eq "1" ] || redirects_restore
+	if [ "$enabled" -ne "1" ]; then
+		redirects_restore
+		return 0
+	fi
+
+	device="$(wan_interface)"
+	if [ -n "$device" ]; then
+		tries=30
+		i=0
+		while [ "$i" -lt "$tries" ]; do
+			[ -d "/sys/class/net/$device" ] && break
+			i=$((i + 1))
+			sleep 1
+		done
+	fi
+
 	start "$@"
 }
 

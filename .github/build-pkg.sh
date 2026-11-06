@@ -204,6 +204,14 @@ cat > "$TEMP_DIR/post-install" <<-EOF
 		# The dae service is disabled by default; restart it only when
 		# the operator has enabled it.
 		[ -x /etc/init.d/dae ] && [ "\$(uci -q get dae.main.enabled)" = "1" ] && /etc/init.d/dae restart
+		# An upgrade replaces the init script, and the boot links belong to
+		# the script that was just overwritten. Without this, a service that
+		# the operator had enabled comes back disabled after a reboot: the
+		# rc.d links are gone, nothing starts the daemon, and the LAN ends up
+		# without a proxy until somebody notices.
+		if [ -x /etc/init.d/dae ] && [ "\$(uci -q get dae.main.enabled)" = "1" ]; then
+			/etc/init.d/dae enable 2>/dev/null
+		fi
 		exit 0
 	}
 EOF
