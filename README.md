@@ -20,18 +20,18 @@
 
 | 设备架构 | 包 |
 |---|---|
-| x86_64 | `dae-2.1.1-r1-x86_64.apk` |
-| arm64 | `dae-2.1.1-r1-aarch64_generic.apk` |
-| riscv64 | `dae-2.1.1-r1-riscv64_generic.apk` |
+| x86_64 | `dae-2.1.1-r3-x86_64.apk` |
+| arm64 | `dae-2.1.1-r3-aarch64_generic.apk` |
+| riscv64 | `dae-2.1.1-r3-riscv64_generic.apk` |
 
 OpenWrt / ImmortalWrt 的 apk v3 只认本地文件，不接受 URL，所以先把包下载下来再装：
 
 ```sh
 cd /tmp
 wget -O dae.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r1/dae-2.1.1-r1-x86_64.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r03/dae-2.1.1-r3-x86_64.apk
 wget -O luci-app-dae.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r1/luci-app-dae-2026.11.05-r1.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r03/luci-app-dae-2026.11.07-r1.apk
 apk add --allow-untrusted ./dae.apk ./luci-app-dae.apk
 ```
 
@@ -40,7 +40,7 @@ apk add --allow-untrusted ./dae.apk ./luci-app-dae.apk
 ```sh
 cd /tmp
 wget -O luci-i18n-dae-zh-cn.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r1/luci-i18n-dae-zh-cn-2026.11.05-r1.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r03/luci-i18n-dae-zh-cn-2026.11.07-r1.apk
 apk add --allow-untrusted ./luci-i18n-dae-zh-cn.apk
 ```
 
@@ -177,7 +177,7 @@ rpcd 读取 init 脚本时只看开头若干行里的 `USE_PROCD`、`START`、`S
 ## 架构
 
 `dae` 包发布的是预编译二进制，所以每个架构一个包：x86_64、arm64、riscv64。
-二进制来自 [szwjp/dae](https://github.com/szwjp/dae/releases/tag/v2026.11.01-nativeapi-r3)
+二进制来自 [szwjp/dae](https://github.com/szwjp/dae/releases/tag/v2026.11.07-nativeapi-r4)
 的发布产物，CI 取下来校验摘要后重新打包，不重复编译。
 面板包与翻译包是纯静态构建，各架构通用。
 
@@ -204,7 +204,7 @@ staging 目录，`apk mkpkg` 写出容器格式。
 守护进程二进制**不在本仓库里**，构建前从引擎发布取：
 
 ```sh
-DAE_TAG=v2026.11.01-nativeapi-r3
+DAE_TAG=v2026.11.07-nativeapi-r4
 curl -fsSL -o dae.tar.xz \
   "https://github.com/szwjp/dae/releases/download/$DAE_TAG/dae-linux-x86_64.tar.xz"
 tar -xJf dae.tar.xz
