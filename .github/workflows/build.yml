@@ -23,13 +23,23 @@ on:
 
 concurrency:
   group: build-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: true
+  # A publish that is cancelled halfway leaves a release with some of its
+  # assets or a half-written notes file. Tag runs are therefore never
+  # cancelled; only branch builds are, which is what the queue is for.
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
+# Read-only by default: the build job runs code from other repositories
+# (openwrt/luci, apk-tools) and has no reason to be able to write here. The
+# release job asks for the write permission it needs.
 permissions:
-  contents: write
+  contents: read
 
 env:
   APK_TOOLS_REF: 'b5a31c0d865342ad80be10d68f1bb3d3ad9b0866'
+  # The commit of openwrt/luci whose Makefile builds po2lmo. A branch name
+  # would let an upstream commit change what this workflow executes with the
+  # workflow token, so the commit is pinned like the actions are.
+  LUCI_REF: '217e71dc75dae31ab670b0e602162a76559a0b47'
   # The release of szwjp/dae that carries the daemon. It must hold the
   # linux-x86_64, linux-arm64 and linux-riscv64_rva23u64 archives.
   DAE_BINARY_TAG: 'v2026.11.07-nativeapi-r4'
@@ -57,6 +67,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Cache apk-tools binary
         id: cache-apk-tools
@@ -73,13 +84,16 @@ jobs:
           path: 'apk-tools'
           fetch-depth: 0
           ref: ${{ env.APK_TOOLS_REF }}
+          persist-credentials: false
 
       - name: Checkout po2lmo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: 'openwrt/luci'
           path: 'po2lmo'
+          ref: ${{ env.LUCI_REF }}
           sparse-checkout: 'modules/luci-base/src'
+          persist-credentials: false
 
       - name: Setup dependencies
         env:
@@ -122,26 +136,37 @@ jobs:
 
       # The daemon comes from the engine repository's release, so the two
       # repositories never build the same binary twice.
+      #
+      # The expected digest is read from dae/digests.txt in this repository,
+      # not from the .dgst file next to the release: a digest published beside
+      # the archive only proves that the two agree, so a replaced release
+      # would carry a matching digest and the check would still pass. The
+      # pinned values fail the build instead.
       - name: Fetch the daemon
         env:
           DAE_ASSET: ${{ matrix.dae_asset }}
         run: |
           set -euo pipefail
+          pinned_tag="$(awk '$1 == "tag" { print $2; exit }' dae/digests.txt)"
+          if [ "$pinned_tag" != "$DAE_BINARY_TAG" ]; then
+            echo "::error::dae/digests.txt pins $pinned_tag but DAE_BINARY_TAG is $DAE_BINARY_TAG; update both together"
+            exit 1
+          fi
+          expected="$(awk -v f="dae-${DAE_ASSET}.tar.xz" '$2 == f { print $1; exit }' dae/digests.txt)"
+          if [ -z "$expected" ]; then
+            echo "::error::dae/digests.txt has no sha256 for dae-${DAE_ASSET}.tar.xz"
+            exit 1
+          fi
           base="https://github.com/szwjp/dae/releases/download/${DAE_BINARY_TAG}"
           url="${base}/dae-${DAE_ASSET}.tar.xz"
           echo "取 $url"
           curl -fsSL --retry 3 -o dae.tar.xz "$url"
-          # The engine release publishes a digest file next to every archive.
-          # The daemon runs as root on the router, so the archive is checked
-          # against the published digest before anything is unpacked.
-          curl -fsSL --retry 3 -o dae.tar.xz.dgst "${base}/dae-${DAE_ASSET}.tar.xz.dgst"
-          expected="$(awk '$3 == "sha256" { print $1 }' dae.tar.xz.dgst)"
           actual="$(sha256sum dae.tar.xz | awk '{print $1}')"
-          if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
-            echo "::error::daemon 归档校验失败：期望 $expected，实际 $actual"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::daemon 归档与 dae/digests.txt 不符：期望 $expected，实际 $actual"
             exit 1
           fi
-          echo "daemon 归档 sha256 校验通过: $actual"
+          echo "daemon 归档 sha256 与 dae/digests.txt 一致: $actual"
           # The archive stores its members with a "./" prefix, so extract it
           # whole and take the daemon from the extracted tree.
           tar -xJf dae.tar.xz
@@ -196,11 +221,14 @@ jobs:
     needs: [build]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout source tree
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Download every architecture's packages
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
@@ -234,16 +262,19 @@ jobs:
             printf '%s-r%02d' "${1%-r*}" "$((10#${1##*-r}))"
           }
           TAG_VERSION="$(canon "$EXPECTED")"
-          if [ "${{ github.event_name }}" = "push" ]; then
-            ON_TAG="${GITHUB_REF_NAME#v}"
-            if [[ ! "$ON_TAG" =~ ^[0-9][0-9A-Za-z.]*-r[0-9]+$ ]]; then
-              echo "::error::tag v$ON_TAG 格式非法（期望形如 v2026.11.01-r03）"
-              exit 1
-            fi
-            if [ "$(canon "$ON_TAG")" != "$TAG_VERSION" ]; then
-              echo "::error::tag v$ON_TAG 与 Makefile 产物版本 $EXPECTED 不一致，拒绝发布"
-              exit 1
-            fi
+          # The release job only runs on a tag, and that tag can arrive from a
+          # push or from a manual dispatch. It has to name exactly the version
+          # the Makefile produces: otherwise the publish step below would
+          # create a second tag on the default branch instead of releasing the
+          # tag that was built.
+          ON_TAG="${GITHUB_REF_NAME#v}"
+          if [[ ! "$ON_TAG" =~ ^[0-9][0-9A-Za-z.]*-r[0-9]+$ ]]; then
+            echo "::error::tag v$ON_TAG 格式非法（期望形如 v2026.11.01-r03）"
+            exit 1
+          fi
+          if [ "v$TAG_VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME 与 Makefile 产物版本 v$TAG_VERSION 不一致（r 编号须补零），拒绝发布"
+            exit 1
           fi
           echo "VERSION=$EXPECTED" >> "$GITHUB_ENV"
           echo "PANEL_VERSION=$PANEL" >> "$GITHUB_ENV"
@@ -324,5 +355,10 @@ jobs:
             gh release upload "$TAG" release/* --clobber
             gh release edit "$TAG" --title "dae + doona panel $TAG" --notes-file notes.md
           else
-            gh release create "$TAG" release/* --title "dae + doona panel $TAG" --notes-file notes.md
+            # --target is a safety net. The check above already guarantees the
+            # tag exists at the built commit, but if it ever did not, the new
+            # tag must point at the commit that was built, not at the default
+            # branch tip. The SHA is resolved locally, where the checkout
+            # already names the tag's commit.
+            gh release create "$TAG" release/* --title "dae + doona panel $TAG" --notes-file notes.md --target "$(git rev-parse HEAD)"
           fi

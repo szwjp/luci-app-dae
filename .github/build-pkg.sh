@@ -154,6 +154,10 @@ if [ -n "$ASSETS" ]; then
 		[ -e "$PKG_DIR/$src" ] || { echo "error: asset $src missing in $PKG_DIR" >&2; exit 1; }
 		mkdir -p "$STAGE/$(dirname "$dst")"
 		cp -a "$PKG_DIR/$src" "$STAGE/$dst"
+		# Vite keeps build metadata next to the assets: module maps and the
+		# absolute paths of the build host. It is of no use at runtime, and
+		# shipping it would publish the builder's home directory.
+		rm -rf "$STAGE/$dst/.vite"
 	done
 fi
 

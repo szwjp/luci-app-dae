@@ -20,18 +20,18 @@
 
 | 设备架构 | 包 |
 |---|---|
-| x86_64 | `dae-2.1.1-r5-x86_64.apk` |
-| arm64 | `dae-2.1.1-r5-aarch64_generic.apk` |
-| riscv64 | `dae-2.1.1-r5-riscv64_generic.apk` |
+| x86_64 | `dae-2.1.1-r6-x86_64.apk` |
+| arm64 | `dae-2.1.1-r6-aarch64_generic.apk` |
+| riscv64 | `dae-2.1.1-r6-riscv64_generic.apk` |
 
 OpenWrt / ImmortalWrt 的 apk v3 只认本地文件，不接受 URL，所以先把包下载下来再装：
 
 ```sh
 cd /tmp
 wget -O dae.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r05/dae-2.1.1-r5-x86_64.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r06/dae-2.1.1-r6-x86_64.apk
 wget -O luci-app-dae.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r05/luci-app-dae-2026.11.08-r1.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r06/luci-app-dae-2026.11.08-r2.apk
 apk add --allow-untrusted ./dae.apk ./luci-app-dae.apk
 ```
 
@@ -40,7 +40,7 @@ apk add --allow-untrusted ./dae.apk ./luci-app-dae.apk
 ```sh
 cd /tmp
 wget -O luci-i18n-dae-zh-cn.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r05/luci-i18n-dae-zh-cn-2026.11.08-r1.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r06/luci-i18n-dae-zh-cn-2026.11.08-r2.apk
 apk add --allow-untrusted ./luci-i18n-dae-zh-cn.apk
 ```
 
@@ -84,6 +84,28 @@ uci get dae.main.api_secret
 `localhost` 会被改写成 `127.0.0.1`，其它主机名不接受——dae 自己要求数值地址，
 写成名字时它会拒绝启动。监听回环地址时面板只在本机可用。
 
+### 安全：API 监听与明文 HTTP
+
+`api_listen` 默认是 `0.0.0.0:9527`，dae 的 native API 与面板都是**明文 HTTP**：
+`api_secret` 和面板使用的 Bearer 令牌在局域网里明文传输，浏览器还会把它存下来。
+默认保留 `0.0.0.0` 是为了装完就能从 LAN 打开面板，代价是：
+
+* **密钥等同于 dae 的控制权。** `api_write=1` 时，拿到密钥的人可以改分流配置；
+  默认 `api_write=0`，两项都打开时才可写。
+* OpenWrt 默认防火墙拒绝 WAN 入站，所以暴露面主要是 LAN。但做过端口转发、DMZ，
+  或者上游本身就是内网的路由器，控制面可能被更大范围访问到。
+* 只在本机用面板时，改监听回环：
+
+  ```sh
+  uci set dae.main.api_listen=127.0.0.1:9527
+  uci commit dae
+  /etc/init.d/dae restart
+  ```
+
+  （本机浏览器还需要 SSH 端口转发才能访问。）
+* 需要 LAN 内多台设备访问时，建议监听 LAN 地址并用 HTTPS 反代（例如 uhttpd 的
+  TLS 站点），不要把 9527 直接放到公网。
+
 ### 地理数据自动更新
 
 规则里 `geosite:` 与 `geoip:` 用到的数据文件是 `v2ray-geoip` / `v2ray-geosite`
@@ -122,13 +144,15 @@ uci commit dae
 几点行为值得知道：
 
 * 下载必须带 Range 头。同一个文件同一个节点，普通 GET 实测只有 16KB/s，显式
-  Range 是 MB/s 级别；脚本首次下载一律用显式 Range，续传才用 `curl -C -`。
+  Range 是 MB/s 级别；脚本首次下载一律用显式 Range。传输中断时保留已下载的
+  部分，下一轮用 `curl -C -` 续传，不会从头再来。
 * 完整性靠上游同目录的 `<file>.sha256sum` 判定——CDN 的 `content-length` 和
-  `content-range` 不可信。校验不过会重下，最多三轮，仍不过则按大小和文件头
-  放行并在日志里记警告。
-* 换文件后重启 dae（dae 只在启动时读地理数据，`reload` 不重新加载），并确认
-  守护进程真的起来了；没起来就把旧文件放回去再重启一次，避免坏文件把代理
-  整个打挂。
+  `content-range` 不可信。校验不过会丢掉重下，最多三轮，仍不过就放弃本次更新、
+  保留旧文件。只有上游没提供 sha256 时，才在一次完整传输之后按大小和文件头
+  放行，并在日志里记警告；不完整的下载不会被放行。
+* 换文件是先在目标目录写临时文件再改名，掉电不会留下半个文件。之后重启 dae
+  （dae 只在启动时读地理数据，`reload` 不重新加载），并确认守护进程真的起来了；
+  没起来就只把本次换过的文件放回去再重启一次，避免坏文件把代理整个打挂。
 * 日志在 `/var/log/dae-geo-update.log`，同时进 syslog（`logread | grep
   dae-geo-update`）。`/var` 是 tmpfs，重启后日志不保留；要长期留档改脚本里的
   `LOGFILE` 常量。
@@ -196,12 +220,17 @@ eBPF 程序需要内核带 BTF。ImmortalWrt 与 OpenWrt 24.10+ 的内核自带
   多网口路由器不用改；**单网口设备**（唯一那个口就是 LAN 口，没有 WAN 口）
   要把它留空，否则出方向流量会和 LAN 侧撞在一起。
 
+开机时 dae 会先等默认路由出现（最多 30 秒）再启动，避免在 PPPoE 还没拨上时
+就挂住 LAN；`wan_interface` 留空的单网口设备不等待。
+
 ## 构建
 
 软件包用 `apk-tools` 直接打包，不走 OpenWrt SDK：`.github/build-pkg.sh` 组装
 staging 目录，`apk mkpkg` 写出容器格式。
 
-守护进程二进制**不在本仓库里**，构建前从引擎发布取：
+守护进程二进制**不在本仓库里**，构建前从引擎发布取。`dae/digests.txt`
+固定了三个架构归档的 sha256，构建会拒绝不匹配的归档；升级引擎时该文件里的
+`tag` 行和 `.github/workflows/build.yml` 的 `DAE_BINARY_TAG` 必须一起改：
 
 ```sh
 DAE_TAG=v2026.11.07-nativeapi-r4
@@ -220,7 +249,9 @@ PKG_ASSET_DIR=assets/x86_64 PKG_ARCH_OVERRIDE=x86_64 \
 fakeroot bash .github/build-pkg.sh luci-app-dae
 ```
 
-面板包与翻译包是预编译产物；它们的构建方法见工作区的
+面板是预编译产物：源仓库、构建戳、产物摘要和当前缺口记在
+`luci-app-dae/assets/doona/PROVENANCE.md`，随包分发的第三方许可证清单在
+`luci-app-dae/assets/doona/THIRD-PARTY-NOTICES.md`。构建方法见
 [方案文档](https://github.com/szwjp/dae-doona/blob/main/docs/PLAN-dae-doona.md)。
 
 ## 许可

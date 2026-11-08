@@ -15,13 +15,18 @@
 # Run by: the cron entry the dae-geo-update init script keeps in root's
 # crontab, and by hand with /usr/bin/dae-geo-update.
 #
+# Skipped: when dae is disabled (dae.main.enabled is 0) the run exits before
+# downloading, because the daemon would never read the files. When dae is
+# enabled but stopped, the files are installed and the restart is skipped:
+# they take effect the next time the daemon starts.
+#
 # Log: /var/log/dae-geo-update.log, and every line also goes to syslog under the
 # dae-geo-update tag. /var is a tmpfs on OpenWrt, so the file does not survive a
 # reboot; the script's LOGFILE constant is the one place to change that.
 #
-# Backup: /etc/dae/geo-backup holds the files that were installed before this
-# run, so a failed update can be rolled back. The backup is kept across runs on
-# purpose: it is the state to go back to when a new file turns out to be bad.
+# Backup: /etc/dae/geo-backup holds a copy of each file taken just before this
+# run replaces it. The rollback puts those copies back, so it touches only the
+# files this run changed, never a file an earlier run installed.
 #
 # Download: the request must carry a Range header. Measured on one router, one
 # file, one node: a plain GET ran at 16KB/s, an explicit range request at MB/s.
@@ -32,9 +37,12 @@
 # Verification: the sha256 the upstream publishes next to the file is the only
 # trustworthy proof that the download is complete and unmodified — the CDN's
 # content-length and content-range are not (the range total measured smaller
-# than the real file). A mismatch is retried from scratch, at most three rounds.
-# Two cheap guards sit on top: a size range, and a first byte of 0x0a, which is
-# a protobuf tag and rules out an HTML error page.
+# than the real file). An unfinished transfer is kept and resumed; a finished
+# file that fails the hash is dropped and fetched from scratch, at most three
+# rounds. When the upstream publishes no sha256 (or it cannot be fetched), one
+# finished transfer is checked against a size range and a first byte of 0x0a,
+# which is a protobuf tag and rules out an HTML error page; a retry cannot
+# improve that check, so it is not retried.
 #
 # Rollback: dae cannot load broken geo data — the configuration fails to build
 # and the proxy stops. This script runs unattended in the early morning, so a
@@ -86,8 +94,15 @@ die() {
 # /tmp is a tmpfs on the router, and tens of megabytes in RAM are wasted there
 cleanup() {
 	rm -rf "$WORK" 2>/dev/null
+	# Files staged next to the target must not outlive an interrupted run:
+	# they are only renamed into place by a run that got that far.
+	rm -f "$DIR"/.*.new "$DIR"/.*.restore "$BACKUP_DIR"/.*.bak.new 2>/dev/null
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+# A trap that only runs the cleanup does not end the script: dash and ash go
+# on with the next command after the handler returns. Exit as well, or a
+# cancelled update keeps downloading in the background.
+trap 'exit 1' INT TERM
 
 # The update is a background job, so it has to be switchable off without
 # touching the crontab.
@@ -96,6 +111,19 @@ enabled() {
 	value="$(uci -q get "$CONFIG.main.geo_update")"
 	[ "$value" = "0" ] && return 1
 	return 0
+}
+
+# Whether dae itself is enabled. A disabled daemon never reads the geo files,
+# so downloading tens of megabytes every week for it is wasted flash and
+# bandwidth. The enabled bit is spelled the same way config_get_bool accepts
+# it, so "true" and "on" are not misread as disabled.
+service_enabled() {
+	local value
+	value="$(uci -q get "$CONFIG.main.enabled")"
+	case "$value" in
+		1|on|true|enabled|yes) return 0 ;;
+	esac
+	return 1
 }
 
 file_hash() {
@@ -115,8 +143,18 @@ fetch_file() {
 }
 
 # Fetch a file and verify it. Returns 0 when the file is usable.
+#
+# The transfer and the check are separate outcomes. "curl" returning 0 means
+# the file is complete; a non-zero exit means it is not, and whatever arrived
+# is kept so the next round can resume it. Only a complete file that fails
+# verification is deleted, because resuming it cannot help.
+#
+# The size and header check is the last resort when the upstream publishes no
+# sha256. It only means something for a complete transfer: a partial file that
+# happens to pass it would be installed truncated, which is why the check is
+# not applied after an interrupted download.
 fetch_verified() {
-	local f="$1" base expected got size magic round
+	local f="$1" base expected got round complete size magic
 
 	base="https://$HOST/gh/$REPO@release"
 
@@ -127,31 +165,40 @@ fetch_verified() {
 
 	round=1
 	while [ "$round" -le "$MAX_ROUNDS" ]; do
-		fetch_file "$f" || log "$f: round $round did not finish, resuming"
+		complete=0
+		if fetch_file "$f"; then
+			complete=1
+		else
+			log "$f: round $round did not finish, keeping the partial file to resume"
+		fi
+
 		got="$(file_hash "$WORK/$f")"
 		if [ -n "$expected" ] && [ -n "$got" ] && [ "$got" = "$expected" ]; then
 			log "$f: sha256 matches upstream ($got)"
 			return 0
 		fi
+
 		if [ -n "$expected" ]; then
+			# An unfinished transfer is resumed, not discarded.
+			[ "$complete" = 1 ] || { round=$((round + 1)); continue; }
 			log "$f: round $round sha256 mismatch (local ${got:-none}, upstream $expected), fetching again"
+			# A complete but wrong file is not usable and cannot be resumed.
+			rm -f "$WORK/$f"
+		else
+			if [ "$complete" = 1 ]; then
+				size="$(wc -c < "$WORK/$f" 2>/dev/null)"
+				magic="$(hexdump -n 1 -e '1/1 "%02x"' "$WORK/$f" 2>/dev/null)"
+				if [ "$size" -ge "$MIN_BYTES" ] && [ "$size" -le "$MAX_BYTES" ] && [ "$magic" = "0a" ]; then
+					log "$f: no upstream sha256, accepted on size ($size) and header"
+					return 0
+				fi
+				log "$f: round $round size or header out of line ($size bytes, first byte '$magic'), fetching again"
+				rm -f "$WORK/$f"
+			fi
 		fi
-		# A mismatch means the file is not usable: drop it so the next
-		# round fetches the whole range again.
-		rm -f "$WORK/$f"
 		round=$((round + 1))
 	done
 
-	# Last resort: the size range and the protobuf header.
-	if [ -f "$WORK/$f" ]; then
-		size="$(wc -c < "$WORK/$f")"
-		magic="$(hexdump -n 1 -e '1/1 "%02x"' "$WORK/$f" 2>/dev/null)"
-		if [ "$size" -ge "$MIN_BYTES" ] && [ "$size" -le "$MAX_BYTES" ] && [ "$magic" = "0a" ]; then
-			log "$f: sha256 never matched, accepted on size ($size) and header; check this file"
-			return 0
-		fi
-		log "$f: size or header out of line ($size bytes, first byte '$magic')"
-	fi
 	return 1
 }
 
@@ -159,6 +206,11 @@ log "--- start ---"
 
 enabled || {
 	log "skipped: $CONFIG.main.geo_update is 0"
+	exit 0
+}
+
+service_enabled || {
+	log "skipped: $CONFIG.main.enabled is 0, dae never reads the geo files"
 	exit 0
 }
 
@@ -191,8 +243,13 @@ for f in $FILES; do
 done
 
 # A file that is already the newest one is left alone, so nothing has to be
-# restarted for it.
-changed=0
+# restarted for it. The other files are installed in two phases: first every
+# new file is copied next to its target, then each copy is renamed into place.
+# The work directory is a tmpfs and the target is on flash, so a direct "mv"
+# would copy and delete, and a power loss in the middle would leave a
+# truncated file where dae reads it. A copy plus a rename on the target
+# filesystem cannot leave a partial file behind.
+CHANGED=""
 for f in $FILES; do
 	new="$(file_hash "$WORK/$f")"
 	old="$(file_hash "$DIR/$f")"
@@ -200,17 +257,49 @@ for f in $FILES; do
 		log "$f: already the newest ($new), left alone"
 		continue
 	fi
-	cp -f "$DIR/$f" "$BACKUP_DIR/$f.bak" 2>/dev/null
-	mv -f "$WORK/$f" "$DIR/$f" || die "cannot replace $f"
-	chmod 644 "$DIR/$f"
-	changed=1
-	log "$f: replaced ($old -> $new)"
+	if ! cp -f "$WORK/$f" "$DIR/.$f.new"; then
+		rm -f "$DIR/.$f.new"
+		for g in $CHANGED; do rm -f "$DIR/.$g.new"; done
+		die "cannot stage $f"
+	fi
+	chmod 644 "$DIR/.$f.new"
+	CHANGED="$CHANGED $f"
 done
 
-if [ "$changed" = "0" ]; then
+if [ -z "$CHANGED" ]; then
 	log "OK: both files are already the newest, dae is not restarted"
 	exit 0
 fi
+
+# The backup is what the rollback restores, and it is written the same way: a
+# truncated backup would be worse than no backup. Only the files this run
+# replaces get a fresh .bak.
+for f in $CHANGED; do
+	[ -f "$DIR/$f" ] || continue
+	if ! cp -f "$DIR/$f" "$BACKUP_DIR/.$f.bak.new"; then
+		rm -f "$BACKUP_DIR/.$f.bak.new"
+		for g in $CHANGED; do rm -f "$DIR/.$g.new"; done
+		die "cannot back up $f"
+	fi
+	mv -f "$BACKUP_DIR/.$f.bak.new" "$BACKUP_DIR/$f.bak" || die "cannot save the backup of $f"
+done
+
+for f in $CHANGED; do
+	old="$(file_hash "$DIR/$f")"
+	new="$(file_hash "$DIR/.$f.new")"
+	if ! mv -f "$DIR/.$f.new" "$DIR/$f"; then
+		# This rename failed; earlier iterations may already be in place, so
+		# put the whole set back instead of leaving a mixed pair.
+		log "cannot replace $f, restoring the files already replaced"
+		for g in $CHANGED; do
+			rm -f "$DIR/.$g.new"
+			[ -f "$BACKUP_DIR/$g.bak" ] || continue
+			cp -f "$BACKUP_DIR/$g.bak" "$DIR/.$g.restore" && mv -f "$DIR/.$g.restore" "$DIR/$g"
+		done
+		die "cannot replace $f"
+	fi
+	log "$f: replaced ($old -> $new)"
+done
 
 # dae reads the geo data when it starts, so a reload does not pick up the new
 # files: it has to be restarted.
@@ -230,6 +319,16 @@ dae_running() {
 	/etc/init.d/dae status 2>/dev/null | grep -q '^running$'
 }
 
+# The service is enabled but not running: stopped by hand, or it failed to
+# start. The new files are already installed and are picked up at the next
+# start, so there is nothing to restart and nothing to roll back. Restarting
+# here would bring up a daemon the operator stopped on purpose, and the wait
+# below would then report a failure that is not one.
+if ! dae_running; then
+	log "dae is enabled but not running; the new files take effect at the next start"
+	exit 0
+fi
+
 restart_dae
 i=0
 OK=0
@@ -247,11 +346,10 @@ if [ "$OK" = "1" ]; then
 	exit 0
 fi
 
-log "dae did not come up, rolling every file back"
-for f in $FILES; do
-	if [ -f "$BACKUP_DIR/$f.bak" ]; then
-		cp -f "$BACKUP_DIR/$f.bak" "$BACKUP_DIR/$f.rollback" && mv -f "$BACKUP_DIR/$f.rollback" "$DIR/$f"
-	fi
+log "dae did not come up, putting back the files this run replaced"
+for f in $CHANGED; do
+	[ -f "$BACKUP_DIR/$f.bak" ] || continue
+	cp -f "$BACKUP_DIR/$f.bak" "$DIR/.$f.restore" && mv -f "$DIR/.$f.restore" "$DIR/$f"
 done
 restart_dae
 sleep 5

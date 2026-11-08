@@ -4,8 +4,7 @@
 		"read": {
 			"ubus": {
 				"dae": [ "status", "secret" ]
-			},
-			"uci": [ "dae" ]
+			}
 		},
 		"write": {
 			"ubus": {

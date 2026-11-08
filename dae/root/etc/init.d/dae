@@ -28,22 +28,39 @@ PROG=/usr/bin/dae
 API_FILE=/etc/dae/api.dae
 REDIRECTS_STATE=/var/run/dae-redirects.state
 
-# The interface dae attaches to is named in its own configuration file, so the
-# redirect workaround has to look at the same place. The UCI option wins over
-# the configuration file, for a device whose bridge is named differently.
-lan_interface() {
-	local interface config_file
+# The dae configuration may quote an interface name and may name more than one,
+# separated by commas. The redirect workaround and the boot wait each need a
+# single device, so the first entry is used and the quoting is stripped.
+first_interface() {
+	local value="$1"
+	value="${value%%,*}"
+	value="${value#\"}"
+	value="${value%\"}"
+	value="${value#\'}"
+	value="${value%\'}"
+	printf '%s\n' "$value"
+}
 
-	config_get interface main lan_interface ""
-	if [ -n "$interface" ]; then
-		printf '%s\n' "$interface"
-		return 0
+# The interface names live in dae's own configuration under /etc/dae, next to
+# the UCI options. The UCI option wins, for a device whose bridge is named
+# differently. Both places are read the same way, so a quoted or comma
+# separated value does not come out as part of the device name.
+config_interface() {
+	local option="$1" config_file interface
+
+	config_get interface main "$option" ""
+	if [ -z "$interface" ]; then
+		config_get config_file main config_file "/etc/dae/config.dae"
+		interface="$(sed -n "s/^[[:space:]]*${option}:[[:space:]]*\"\{0,1\}\([^\"[:space:],#]*\).*/\1/p" \
+			"$(dirname "$config_file")"/config.d/*.dae "$config_file" 2>/dev/null | head -n 1)"
 	fi
+	first_interface "$interface"
+}
 
-	config_get config_file main config_file "/etc/dae/config.dae"
-	interface="$(sed -n 's/^[[:space:]]*lan_interface:[[:space:]]*\([^[:space:]#]*\).*/\1/p' \
-		"$(dirname "$config_file")"/config.d/*.dae "$config_file" 2>/dev/null | head -n 1)"
-	printf '%s\n' "$interface"
+# The interface dae attaches to is named in its own configuration file, so the
+# redirect workaround has to look at the same place.
+lan_interface() {
+	config_interface lan_interface
 }
 
 # dae refuses to attach to an interface that sends ICMP redirects: the
@@ -306,29 +323,42 @@ stop_service() {
 # first reboot after the upgrade: dae at 08:11:12, pppoe-wan at 08:11:20, and
 # from 08:11:42 on the LAN had no connectivity at all until dae was stopped.
 #
-# So at boot the daemon is only brought up once the WAN interface it is
-# configured to use actually exists. The check is cheap and reads the same
-# configuration the daemon does; the wait is bounded, because a router whose
-# uplink never comes up must still end up with a running dae once the operator
-# fixes it by hand.
+# So at boot the daemon is only brought up once the uplink is usable: the
+# interface named in the configuration has to exist, and the default route has
+# to be there. The second half matters as much as the first: pppd creates
+# pppoe-wan before the session is established, and with "auto" that route is
+# exactly what dae picks. The wait is bounded, because a router whose uplink
+# never comes up must still end up with a running dae once the operator fixes
+# it by hand.
 wan_interface() {
-	local interface config_file
+	config_interface wan_interface
+}
 
-	config_get interface main wan_interface ""
-	if [ -n "$interface" ]; then
-		printf '%s\n' "$interface"
-		return 0
-	fi
+# Whether the kernel has a default route yet. /proc/net/route is read instead
+# of "ip route" so the check does not depend on which ip tool the image ships.
+uplink_ready() {
+	awk '$2 == "00000000" { found = 1 } END { exit !found }' /proc/net/route 2>/dev/null
+}
 
-	config_get config_file main config_file "/etc/dae/config.dae"
-	interface="$(sed -n 's/^[[:space:]]*wan_interface:[[:space:]]*"\{0,1\}\([^"[:space:]#]*\).*/\1/p' \
-		"$(dirname "$config_file")"/config.d/*.dae "$config_file" 2>/dev/null | head -n 1)"
-	[ "$interface" = "auto" ] && interface=""
-	printf '%s\n' "$interface"
+# Waits, with a bound, for the uplink to be usable: the default route has to
+# be there, and a named device has to exist as well. "auto" (and any other
+# name) means dae needs an uplink; an empty value means a device without a WAN
+# (see the README), where there is nothing to wait for.
+wait_uplink() {
+	local device="$1" tries=30 i=0
+
+	while [ "$i" -lt "$tries" ]; do
+		if uplink_ready && { [ -z "$device" ] || [ -d "/sys/class/net/$device" ]; }; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 1
+	done
+	return 1
 }
 
 boot() {
-	local enabled device tries i
+	local enabled device
 
 	config_load "$CONFIG"
 	config_get_bool enabled main enabled 0
@@ -338,15 +368,18 @@ boot() {
 	fi
 
 	device="$(wan_interface)"
-	if [ -n "$device" ]; then
-		tries=30
-		i=0
-		while [ "$i" -lt "$tries" ]; do
-			[ -d "/sys/class/net/$device" ] && break
-			i=$((i + 1))
-			sleep 1
-		done
-	fi
+	case "$device" in
+		'')
+			# The single-NIC layout: no WAN, so there is no uplink to wait
+			# for.
+			;;
+		auto)
+			# dae resolves "auto" to the interface of the default route
+			# itself, so only the route has to be waited for.
+			wait_uplink "" ;;
+		*)
+			wait_uplink "$device" ;;
+	esac
 
 	start "$@"
 }

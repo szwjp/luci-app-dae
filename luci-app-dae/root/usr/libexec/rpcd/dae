@@ -442,6 +442,11 @@ set_api_write() {
 		*) emit_result false invalid_value; return 1 ;;
 	esac
 
+	# The value to put back when the daemon refuses to start has to be read
+	# before the write below: after "uci commit" it is already the new value.
+	config_load "$CONFIG"
+	config_get previous main api_write "0"
+
 	if ! uci -q set "$CONFIG.main.api_write=$value"; then
 		emit_result false settings_write_failed
 		return 1
@@ -454,7 +459,6 @@ set_api_write() {
 	# The daemon reads the permission when it starts, so it has to be
 	# restarted for the change to reach the core.
 	if service_running; then
-		previous="$(uci -q get "$CONFIG.main.api_write")"
 		/etc/init.d/dae restart >/dev/null 2>&1
 		if wait_state running 15; then
 			emit_result true api_write_applied
