@@ -145,6 +145,7 @@ jobs:
       - name: Fetch the daemon
         env:
           DAE_ASSET: ${{ matrix.dae_asset }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           pinned_tag="$(awk '$1 == "tag" { print $2; exit }' dae/digests.txt)"
@@ -157,13 +158,24 @@ jobs:
             echo "::error::dae/digests.txt has no sha256 for dae-${DAE_ASSET}.tar.xz"
             exit 1
           fi
-          base="https://github.com/szwjp/dae/releases/download/${DAE_BINARY_TAG}"
-          url="${base}/dae-${DAE_ASSET}.tar.xz"
-          echo "取 $url"
-          # GitHub's release CDN answers 504 now and then; --retry-all-errors
-          # keeps a single bad edge from failing the whole release.
-          curl -fsSL --connect-timeout 20 --retry 6 --retry-delay 3 --retry-all-errors \
-            -o dae.tar.xz "$url"
+          # The asset is fetched through the release API, not through the
+          # releases/download URL: that URL answered 504 for every large asset
+          # during one release while the API endpoint served the same bytes.
+          # The id is resolved from the tag, then the asset endpoint redirects
+          # to the storage host.
+          asset="dae-${DAE_ASSET}.tar.xz"
+          echo "取 $asset"
+          api="https://api.github.com/repos/szwjp/dae/releases/tags/${DAE_BINARY_TAG}"
+          asset_id="$(curl -fsSL --connect-timeout 20 --retry 4 --retry-delay 3 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$api" | jq -r --arg n "$asset" '.assets[] | select(.name == $n) | .id' | head -n 1)"
+          if [ -z "$asset_id" ] || [ "$asset_id" = "null" ]; then
+            echo "::error::release ${DAE_BINARY_TAG} has no asset named $asset"
+            exit 1
+          fi
+          curl -fsSL --connect-timeout 20 --retry 4 --retry-delay 3 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" \
+            -o dae.tar.xz "https://api.github.com/repos/szwjp/dae/releases/assets/$asset_id"
           actual="$(sha256sum dae.tar.xz | awk '{print $1}')"
           if [ "$actual" != "$expected" ]; then
             echo "::error::daemon 归档与 dae/digests.txt 不符：期望 $expected，实际 $actual"
