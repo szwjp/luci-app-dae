@@ -2,12 +2,17 @@
 # dae-geo-update — fetch the newest geoip.dat / geosite.dat for the dae engine
 # and restart dae so it picks them up.
 #
-# Source (the only one):
-#   https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat
-#   https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat
-# The @release branch is used on purpose: a @<tag> URL returns 404, while the
-# branch holds the artifact of the latest upstream build. So nothing here pins a
-# version or records a tag: whatever @release serves is what gets installed.
+# Source:
+#   https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@<commit>/geoip.dat
+#   https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@<commit>/geosite.dat
+# The project publishes no tag (a @<tag> URL returns 404), only the moving
+# "release" branch, so the branch is resolved to its commit first and the files
+# are fetched at that commit. Fetching through the branch is not stable: the
+# branch moves, and jsDelivr keeps a large file in its cache for hours while it
+# revalidates the small sha256 next to it, so a run inside that window gets the
+# previous build and rejects it against the new digest (seen on a live router).
+# The commit URL is immutable, so the two files and their sha256 always come
+# from one snapshot.
 #
 # Target: /usr/share/v2ray — the directory the init script points dae at with
 # DAE_LOCATION_ASSET. dae reads the files when it starts, and only then.
@@ -67,6 +72,10 @@ WORK=/tmp/dae-geo-update.work
 LOCKFILE=/var/lock/dae-geo-update.lock
 HOST=cdn.jsdelivr.net
 REPO=Loyalsoldier/v2ray-rules-dat
+BRANCH=release
+# Filled by resolve_source() with the commit-pinned or, as a fallback, the
+# branch-based base URL.
+BASE=
 FILES="geosite.dat geoip.dat"
 # A floor for the download, not for the files the packages ship. The two are
 # different things: v2ray-geosite installs a small geosite.dat (a couple of
@@ -130,11 +139,34 @@ file_hash() {
 	sha256sum "$1" 2>/dev/null | awk '{print $1}'
 }
 
+# Resolve the release branch to the commit it points at and set BASE from it.
+# A failed lookup (offline, GitHub rate limit) falls back to the branch: the
+# run then keeps the cache race it had before, which is safer than not
+# updating at all.
+resolve_source() {
+	local commit
+
+	commit="$(curl -fsS --max-time 60 \
+		"https://api.github.com/repos/$REPO/branches/$BRANCH" 2>/dev/null |
+		sed -n 's/.*"sha"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p' |
+		head -n 1)"
+	case "$commit" in
+		*[!0-9a-f]*|'') commit="" ;;
+	esac
+	if [ -n "$commit" ]; then
+		BASE="https://$HOST/gh/$REPO@$commit"
+		log "source: $REPO@$BRANCH is $commit"
+	else
+		BASE="https://$HOST/gh/$REPO@$BRANCH"
+		log "warning: cannot resolve $BRANCH to a commit, fetching the branch (the cache race stays)"
+	fi
+}
+
 # Fetch a file: resume an existing partial one, otherwise ask for the range
 # explicitly.
 fetch_file() {
 	local f="$1" url
-	url="https://$HOST/gh/$REPO@release/$f"
+	url="$BASE/$f"
 	if [ -s "$WORK/$f" ]; then
 		curl -fsS -C - --connect-timeout 20 --max-time "$FETCH_TIMEOUT" -o "$WORK/$f" "$url" 2>/dev/null
 	else
@@ -156,7 +188,7 @@ fetch_file() {
 fetch_verified() {
 	local f="$1" base expected got round complete size magic
 
-	base="https://$HOST/gh/$REPO@release"
+	base="$BASE"
 
 	# The sha256 the upstream publishes is the only trustworthy reference
 	curl -fsS --max-time 60 -o "$WORK/$f.sha256sum" "$base/$f.sha256sum" 2>/dev/null
@@ -235,6 +267,10 @@ if ! flock -n 9; then
 	log "skipped: another update is already running"
 	exit 0
 fi
+
+# The source is pinned once, before the first download: the two files and their
+# sha256 have to come from the same snapshot.
+resolve_source
 
 # Both files are fetched and verified before either is installed: a failure
 # halfway through leaves the running daemon on its old files.

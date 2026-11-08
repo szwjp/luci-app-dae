@@ -368,7 +368,7 @@ disable() {
 # it starts, so a running service is restarted to make the new address take
 # effect; a service that is not running picks it up at the next start.
 set_listen() {
-	local request address port listen previous
+	local request address port listen previous pid
 
 	request="$(cat)"
 	json_load "$request" 2>/dev/null || { emit_result false invalid_request; return 1; }
@@ -408,8 +408,12 @@ set_listen() {
 	fi
 
 	if service_running; then
+		# procd stops and starts asynchronously, so "is it running" is still
+		# true for the old instance right after the restart. The pid is what
+		# tells the new instance apart from the one that was just stopped.
+		pid="$(service_pid)"
 		/etc/init.d/dae restart >/dev/null 2>&1
-		if wait_state running 15; then
+		if wait_new_instance "$pid" 15; then
 			emit_result true listener_applied
 			return 0
 		fi
@@ -418,8 +422,9 @@ set_listen() {
 		# the service down until somebody edits UCI by hand.
 		uci -q set "$CONFIG.main.api_listen=$previous"
 		uci -q commit "$CONFIG"
+		pid="$(service_pid)"
 		/etc/init.d/dae restart >/dev/null 2>&1
-		wait_state running 15
+		wait_new_instance "$pid" 15
 		emit_result false listener_reverted
 	else
 		emit_result true listener_saved
@@ -430,7 +435,7 @@ set_listen() {
 # the daemon reports that in the capabilities of its native API. The switch on
 # the LuCI page turns the permission on and off.
 set_api_write() {
-	local request value previous
+	local request value previous pid
 
 	request="$(cat)"
 	json_load "$request" 2>/dev/null || { emit_result false invalid_request; return 1; }
@@ -459,8 +464,11 @@ set_api_write() {
 	# The daemon reads the permission when it starts, so it has to be
 	# restarted for the change to reach the core.
 	if service_running; then
+		# The old instance still reports "running" for a moment after the
+		# restart, so the wait compares pids instead of the status word.
+		pid="$(service_pid)"
 		/etc/init.d/dae restart >/dev/null 2>&1
-		if wait_state running 15; then
+		if wait_new_instance "$pid" 15; then
 			emit_result true api_write_applied
 			return 0
 		fi
@@ -469,8 +477,9 @@ set_api_write() {
 		# daemon refuses to start with leaves it down.
 		uci -q set "$CONFIG.main.api_write=${previous:-0}"
 		uci -q commit "$CONFIG"
+		pid="$(service_pid)"
 		/etc/init.d/dae restart >/dev/null 2>&1
-		wait_state running 15
+		wait_new_instance "$pid" 15
 		emit_result false api_write_reverted
 	else
 		emit_result true api_write_saved

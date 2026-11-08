@@ -20,18 +20,18 @@
 
 | 设备架构 | 包 |
 |---|---|
-| x86_64 | `dae-2.1.1-r6-x86_64.apk` |
-| arm64 | `dae-2.1.1-r6-aarch64_generic.apk` |
-| riscv64 | `dae-2.1.1-r6-riscv64_generic.apk` |
+| x86_64 | `dae-2.1.1-r7-x86_64.apk` |
+| arm64 | `dae-2.1.1-r7-aarch64_generic.apk` |
+| riscv64 | `dae-2.1.1-r7-riscv64_generic.apk` |
 
 OpenWrt / ImmortalWrt 的 apk v3 只认本地文件，不接受 URL，所以先把包下载下来再装：
 
 ```sh
 cd /tmp
 wget -O dae.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r06/dae-2.1.1-r6-x86_64.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r07/dae-2.1.1-r7-x86_64.apk
 wget -O luci-app-dae.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r06/luci-app-dae-2026.11.08-r2.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r07/luci-app-dae-2026.11.08-r3.apk
 apk add --allow-untrusted ./dae.apk ./luci-app-dae.apk
 ```
 
@@ -40,7 +40,7 @@ apk add --allow-untrusted ./dae.apk ./luci-app-dae.apk
 ```sh
 cd /tmp
 wget -O luci-i18n-dae-zh-cn.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r06/luci-i18n-dae-zh-cn-2026.11.08-r2.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r07/luci-i18n-dae-zh-cn-2026.11.08-r3.apk
 apk add --allow-untrusted ./luci-i18n-dae-zh-cn.apk
 ```
 
@@ -110,12 +110,18 @@ uci get dae.main.api_secret
 
 规则里 `geosite:` 与 `geoip:` 用到的数据文件是 `v2ray-geoip` / `v2ray-geosite`
 两个包装的 `geoip.dat` 与 `geosite.dat`，位于 `/usr/share/v2ray`。软件包会每周
-一凌晨两点自动更新它们，来源固定为：
+一凌晨两点自动更新它们。上游没有 tag，只有不断更新的 `release` 分支，所以脚本
+先把分支解析成 commit，再按 commit 取文件和它的 `.sha256sum`：
 
 ```
-https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat
-https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat
+https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@<commit>/geoip.dat
+https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@<commit>/geosite.dat
 ```
+
+这样两个文件与摘要来自同一个不可变快照。直接走 `@release` 会踩到 jsDelivr 的
+缓存窗口：大文件缓存几小时、旁边的 `.sha256sum` 却已刷新，于是校验必然失败
+（实测遇到过）。解析不到 commit 时（离线、GitHub 限流）会退回按分支取，并在
+日志里告警。
 
 更新脚本是 `/usr/bin/dae-geo-update`，cron 条目由 `/etc/init.d/dae-geo-update`
 维护（它排在 `cron` 之前启动，因为 crond 在 crontabs 目录为空时不会起来）。
