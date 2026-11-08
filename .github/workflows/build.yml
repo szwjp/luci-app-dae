@@ -160,7 +160,10 @@ jobs:
           base="https://github.com/szwjp/dae/releases/download/${DAE_BINARY_TAG}"
           url="${base}/dae-${DAE_ASSET}.tar.xz"
           echo "取 $url"
-          curl -fsSL --retry 3 -o dae.tar.xz "$url"
+          # GitHub's release CDN answers 504 now and then; --retry-all-errors
+          # keeps a single bad edge from failing the whole release.
+          curl -fsSL --connect-timeout 20 --retry 6 --retry-delay 3 --retry-all-errors \
+            -o dae.tar.xz "$url"
           actual="$(sha256sum dae.tar.xz | awk '{print $1}')"
           if [ "$actual" != "$expected" ]; then
             echo "::error::daemon 归档与 dae/digests.txt 不符：期望 $expected，实际 $actual"
