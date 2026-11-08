@@ -10,7 +10,7 @@
 # or later.
 
 PKG_NAME:=luci-app-dae
-PKG_VERSION:=2026.11.07
+PKG_VERSION:=2026.11.08
 PKG_RELEASE:=1
 
 PKG_LICENSE:=GPL-3.0-only
