@@ -141,18 +141,46 @@ wait_state() {
 # the restart. A failed start leaves the old pid gone and no new one, and a
 # start that dies at once leaves no pid either, so both are reported as a
 # failure instead of as a success that the next status call contradicts.
+# The port the API is configured for, for the listener check below.
+configured_port() {
+	local listen
+	config_load "$CONFIG"
+	config_get listen main api_listen "$DEFAULT_LISTEN"
+	printf '%s' "${listen##*:}"
+}
+
+# Whether something listens on the given TCP port. /proc/net/tcp is read
+# because the image may carry neither ss nor netstat; the state column is 0A
+# for LISTEN and the local address ends in the port as four hex digits.
+port_listening() {
+	local port="$1" hex
+
+	case "$port" in
+		''|*[!0-9]*) return 1 ;;
+	esac
+	# No proc support: the pid check is all there is, do not block on it.
+	[ -r /proc/net/tcp ] || return 0
+	hex="$(printf '%04X' "$port")"
+	cat /proc/net/tcp /proc/net/tcp6 2>/dev/null |
+		awk -v suffix=":$hex" '$2 ~ suffix"$" && $4 == "0A" { found = 1 } END { exit !found }'
+}
+
 wait_new_instance() {
-	local before="$1" budget="$2" deadline pid
+	local before="$1" budget="$2" port="$3" deadline pid
 
 	deadline=$(( $(date +%s) + budget ))
 	while [ "$(date +%s)" -lt "$deadline" ]; do
 		pid="$(service_pid)"
 		if [ -n "$pid" ] && [ "$pid" != "$before" ]; then
-			# Up is not the same as usable: the daemon binds its listener
-			# after it starts, and procd respawns one that dies at once. The
-			# same pid after a short settle is what the caller needs.
+			# Up is not the same as usable: the daemon binds its listener a
+			# moment later, and procd respawns one that dies at once. The
+			# same pid, still there after a short settle and with its port
+			# listening, is what the caller needs.
 			sleep 2
-			[ "$(service_pid)" = "$pid" ] && return 0
+			if [ "$(service_pid)" = "$pid" ] &&
+				{ [ -z "$port" ] || port_listening "$port"; }; then
+				return 0
+			fi
 		fi
 		sleep 1
 	done
@@ -311,7 +339,7 @@ start() {
 		return 1
 	fi
 	/etc/init.d/dae start >/dev/null 2>&1
-	if wait_new_instance "" "$WAIT_START"; then
+	if wait_new_instance "" "$WAIT_START" "$(configured_port)"; then
 		emit_result true started
 	else
 		emit_result false start_failed
@@ -337,7 +365,7 @@ restart() {
 	# or a new process that dies at once, both fail the comparison.
 	pid="$(service_pid)"
 	/etc/init.d/dae restart >/dev/null 2>&1
-	if wait_new_instance "$pid" "$WAIT_START"; then
+	if wait_new_instance "$pid" "$WAIT_START" "$(configured_port)"; then
 		emit_result true restarted
 	else
 		emit_result false restart_failed
@@ -423,7 +451,7 @@ set_listen() {
 		# tells the new instance apart from the one that was just stopped.
 		pid="$(service_pid)"
 		/etc/init.d/dae restart >/dev/null 2>&1
-		if wait_new_instance "$pid" "$WAIT_APPLY"; then
+		if wait_new_instance "$pid" "$WAIT_APPLY" "$port"; then
 			emit_result true listener_applied
 			return 0
 		fi
@@ -434,7 +462,7 @@ set_listen() {
 		uci -q commit "$CONFIG"
 		pid="$(service_pid)"
 		/etc/init.d/dae restart >/dev/null 2>&1
-		wait_new_instance "$pid" "$WAIT_REVERT"
+		wait_new_instance "$pid" "$WAIT_REVERT" "${previous##*:}"
 		emit_result false listener_reverted
 	else
 		emit_result true listener_saved
@@ -478,7 +506,7 @@ set_api_write() {
 		# restart, so the wait compares pids instead of the status word.
 		pid="$(service_pid)"
 		/etc/init.d/dae restart >/dev/null 2>&1
-		if wait_new_instance "$pid" "$WAIT_APPLY"; then
+		if wait_new_instance "$pid" "$WAIT_APPLY" "$(configured_port)"; then
 			emit_result true api_write_applied
 			return 0
 		fi
@@ -489,7 +517,7 @@ set_api_write() {
 		uci -q commit "$CONFIG"
 		pid="$(service_pid)"
 		/etc/init.d/dae restart >/dev/null 2>&1
-		wait_new_instance "$pid" "$WAIT_REVERT"
+		wait_new_instance "$pid" "$WAIT_REVERT" "$(configured_port)"
 		emit_result false api_write_reverted
 	else
 		emit_result true api_write_saved
