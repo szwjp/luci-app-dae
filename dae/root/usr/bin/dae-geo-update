@@ -384,8 +384,14 @@ while [ "$i" -lt "$START_TIMEOUT" ]; do
 	# once, and that instance is not a success either. It also has to report
 	# running for the moment it is checked.
 	if [ -n "$pid" ] && [ "$pid" != "$before" ] && dae_running; then
-		OK=1
-		break
+		# A pid that is there is not necessarily one that stays: procd
+		# respawns a daemon that dies at once. The same pid after a short
+		# settle is the one that counts.
+		sleep 2
+		if [ "$(dae_pid)" = "$pid" ] && dae_running; then
+			OK=1
+			break
+		fi
 	fi
 	i=$((i + 2))
 done

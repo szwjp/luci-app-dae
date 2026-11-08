@@ -13,12 +13,14 @@
 . /usr/share/libubox/jshn.sh
 
 CONFIG=dae
-# The LuCI RPC call behind the page times out after 20 seconds by default, and
-# the restart in these methods is followed by a rollback and a second restart.
-# Seven seconds per wait leaves room for both restarts inside that budget; a
-# daemon that needs longer than this to come up would be reported as failed,
-# which is better than a rollback killed halfway by the timeout.
-SETTLE_TRIES=7
+# Waits are measured in seconds, not in tries: the settle below costs two
+# seconds of its own, and a try count would make the total depend on how often
+# the pid changes. The LuCI RPC call behind the page times out after 20 seconds
+# by default, and the methods that can roll back restart twice, so their two
+# waits share that budget: 8 + 5 seconds plus the restarts stays under it.
+WAIT_START=12
+WAIT_APPLY=8
+WAIT_REVERT=5
 UI_PATH=/usr/share/dae/doona
 DEFAULT_LISTEN=0.0.0.0:9527
 LAN_NETWORK=lan
@@ -140,15 +142,19 @@ wait_state() {
 # start that dies at once leaves no pid either, so both are reported as a
 # failure instead of as a success that the next status call contradicts.
 wait_new_instance() {
-	local before="$1" tries="$2" i=0 pid
+	local before="$1" budget="$2" deadline pid
 
-	while [ "$i" -lt "$tries" ]; do
+	deadline=$(( $(date +%s) + budget ))
+	while [ "$(date +%s)" -lt "$deadline" ]; do
 		pid="$(service_pid)"
 		if [ -n "$pid" ] && [ "$pid" != "$before" ]; then
-			return 0
+			# Up is not the same as usable: the daemon binds its listener
+			# after it starts, and procd respawns one that dies at once. The
+			# same pid after a short settle is what the caller needs.
+			sleep 2
+			[ "$(service_pid)" = "$pid" ] && return 0
 		fi
-		i=$((i + 1))
-		[ "$i" -lt "$tries" ] && sleep 1
+		sleep 1
 	done
 
 	return 1
@@ -305,7 +311,7 @@ start() {
 		return 1
 	fi
 	/etc/init.d/dae start >/dev/null 2>&1
-	if wait_new_instance "" 15; then
+	if wait_new_instance "" "$WAIT_START"; then
 		emit_result true started
 	else
 		emit_result false start_failed
@@ -331,7 +337,7 @@ restart() {
 	# or a new process that dies at once, both fail the comparison.
 	pid="$(service_pid)"
 	/etc/init.d/dae restart >/dev/null 2>&1
-	if wait_new_instance "$pid" 15; then
+	if wait_new_instance "$pid" "$WAIT_START"; then
 		emit_result true restarted
 	else
 		emit_result false restart_failed
@@ -417,7 +423,7 @@ set_listen() {
 		# tells the new instance apart from the one that was just stopped.
 		pid="$(service_pid)"
 		/etc/init.d/dae restart >/dev/null 2>&1
-		if wait_new_instance "$pid" "$SETTLE_TRIES"; then
+		if wait_new_instance "$pid" "$WAIT_APPLY"; then
 			emit_result true listener_applied
 			return 0
 		fi
@@ -428,7 +434,7 @@ set_listen() {
 		uci -q commit "$CONFIG"
 		pid="$(service_pid)"
 		/etc/init.d/dae restart >/dev/null 2>&1
-		wait_new_instance "$pid" "$SETTLE_TRIES"
+		wait_new_instance "$pid" "$WAIT_REVERT"
 		emit_result false listener_reverted
 	else
 		emit_result true listener_saved
@@ -472,7 +478,7 @@ set_api_write() {
 		# restart, so the wait compares pids instead of the status word.
 		pid="$(service_pid)"
 		/etc/init.d/dae restart >/dev/null 2>&1
-		if wait_new_instance "$pid" "$SETTLE_TRIES"; then
+		if wait_new_instance "$pid" "$WAIT_APPLY"; then
 			emit_result true api_write_applied
 			return 0
 		fi
@@ -483,7 +489,7 @@ set_api_write() {
 		uci -q commit "$CONFIG"
 		pid="$(service_pid)"
 		/etc/init.d/dae restart >/dev/null 2>&1
-		wait_new_instance "$pid" "$SETTLE_TRIES"
+		wait_new_instance "$pid" "$WAIT_REVERT"
 		emit_result false api_write_reverted
 	else
 		emit_result true api_write_saved

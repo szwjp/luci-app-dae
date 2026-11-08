@@ -3,9 +3,10 @@ name: Build
 # Two trigger paths:
 #   - workflow_dispatch: manual run from the Actions tab. It builds the
 #     packages; the release is published when the run is made on a tag.
-#   - push of a v* tag: the same build, plus the tag is required to agree
-#     with the Makefile version, so a mistyped tag cannot publish a
-#     mismatched release.
+#   - push of a v* tag: the same build, plus the tag has to be exactly the
+#     engine package's or the panel package's version, so a mistyped tag
+#     cannot publish a mismatched release and a panel-only change does not
+#     need an empty engine bump.
 #
 # The packages are built with apk-tools directly, not with an OpenWrt SDK:
 # .github/build-pkg.sh assembles the staging tree and apk mkpkg writes the ADB
@@ -280,20 +281,29 @@ jobs:
             printf '%s-r%02d' "${1%-r*}" "$((10#${1##*-r}))"
           }
           TAG_VERSION="$(canon "$EXPECTED")"
+          PANEL_TAG="$(canon "$PANEL")"
           # The release job only runs on a tag, and that tag can arrive from a
-          # push or from a manual dispatch. It has to name exactly the version
-          # the Makefile produces: otherwise the publish step below would
-          # create a second tag on the default branch instead of releasing the
-          # tag that was built.
+          # push or from a manual dispatch. It has to name exactly one of the
+          # two package versions: the engine's when the daemon changed, the
+          # panel's when only the panel did. That keeps a panel-only release
+          # from bumping the engine package just to get a new tag. Any other
+          # tag is refused, so the publish step below cannot invent a tag on
+          # the default branch.
           ON_TAG="${GITHUB_REF_NAME#v}"
           if [[ ! "$ON_TAG" =~ ^[0-9][0-9A-Za-z.]*-r[0-9]+$ ]]; then
             echo "::error::tag v$ON_TAG 格式非法（期望形如 v2026.11.01-r03）"
             exit 1
           fi
-          if [ "v$TAG_VERSION" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::tag $GITHUB_REF_NAME 与 Makefile 产物版本 v$TAG_VERSION 不一致（r 编号须补零），拒绝发布"
-            exit 1
-          fi
+          case "$GITHUB_REF_NAME" in
+            "v$TAG_VERSION"|"v$PANEL_TAG") ;;
+            *)
+              echo "::error::tag $GITHUB_REF_NAME 必须等于引擎版本 v$TAG_VERSION 或面板版本 v$PANEL_TAG（r 编号须补零）"
+              exit 1
+              ;;
+          esac
+          # The published tag is what the release is called and what the notes
+          # link to, so the rest of the job works with it.
+          TAG_VERSION="$ON_TAG"
           echo "VERSION=$EXPECTED" >> "$GITHUB_ENV"
           echo "PANEL_VERSION=$PANEL" >> "$GITHUB_ENV"
           echo "TAG_VERSION=$TAG_VERSION" >> "$GITHUB_ENV"
