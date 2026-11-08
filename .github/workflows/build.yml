@@ -167,11 +167,14 @@ jobs:
             exit 1
           fi
           echo "daemon 归档 sha256 与 dae/digests.txt 一致: $actual"
-          # The archive stores its members with a "./" prefix, so extract it
-          # whole and take the daemon from the extracted tree.
-          tar -xJf dae.tar.xz
+          # The archive stores its members with a "./" prefix. It is unpacked
+          # into a directory of its own: extracting into the workspace root
+          # drops usr/ and whatever else the archive carries over the
+          # checkout.
+          mkdir -p dae-extract
+          tar -xJf dae.tar.xz -C dae-extract
           mkdir -p "dae/assets/${{ matrix.arch }}"
-          install -m0755 usr/bin/dae "dae/assets/${{ matrix.arch }}/dae"
+          install -m0755 dae-extract/usr/bin/dae "dae/assets/${{ matrix.arch }}/dae"
           file "dae/assets/${{ matrix.arch }}/dae"
 
       - name: Build packages

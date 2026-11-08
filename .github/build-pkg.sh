@@ -142,6 +142,14 @@ fi
 if [ -d "$PKG_DIR/htdocs" ] && [ -n "$(ls -A "$PKG_DIR/htdocs" 2>/dev/null)" ]; then
 	mkdir -p "$STAGE/www"
 	cp -a "$PKG_DIR/htdocs/." "$STAGE/www/"
+	# The query string on dae.css is what makes a browser load the new
+	# stylesheet after an upgrade. A hand-maintained constant is forgotten
+	# sooner or later, so the package version is stamped in here.
+	step_style="$STAGE/www/luci-static/resources/view/dae/rpc.js"
+	if [ -f "$step_style" ]; then
+		sed "s/const STYLE_VERSION = '[^']*';/const STYLE_VERSION = '$VERSION';/" \
+			"$step_style" > "$step_style.new" && mv "$step_style.new" "$step_style"
+	fi
 fi
 if [ -n "$ASSETS" ]; then
 	# The asset directory follows the architecture when the workflow builds
@@ -204,7 +212,9 @@ cat > "$TEMP_DIR/post-install" <<-EOF
 		# The LuCI menu is read by rpcd, so its cache has to go and
 		# rpcd has to pick the new menu and the new ACLs up.
 		/etc/init.d/rpcd reload 2>/dev/null
-		/etc/init.d/uhttpd restart 2>/dev/null
+		# uhttpd is deliberately not restarted: this package ships no
+		# configuration for it, and restarting it drops the LuCI session of
+		# whoever is installing the package.
 		# The dae service is disabled by default; restart it only when
 		# the operator has enabled it.
 		[ -x /etc/init.d/dae ] && [ "\$(uci -q get dae.main.enabled)" = "1" ] && /etc/init.d/dae restart

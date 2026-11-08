@@ -53,8 +53,8 @@ msgstr "dae 服務目前未啟用。"
 msgid "The dae service is not enabled yet. Press Start to enable and start it."
 msgstr "dae 服務尚未啟用，點「啟動」即可啟用並啟動。"
 
-msgid "The dae service is not running."
-msgstr "dae 服務未執行。"
+msgid "The dae service is stopped. Press Start to run it."
+msgstr "dae 服務已停止，點「啟動」即可執行。"
 
 msgid "The panel files are missing. Reinstall the luci-app-dae package."
 msgstr "面板檔案缺少，請重新安裝 luci-app-dae 套件。"

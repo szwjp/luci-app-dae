@@ -4,9 +4,6 @@
 		"order": 30,
 		"action": {
 			"type": "firstchild"
-		},
-		"depends": {
-			"acl": [ "luci-app-dae-read" ]
 		}
 	},
 	"admin/services/dae/panel": {

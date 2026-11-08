@@ -251,8 +251,30 @@ check_listen() {
 # explicitly, and the panel authenticates either way. A secret that is missing
 # is generated once and written back, so the panel works right after the first
 # start.
+# These values end up inside quoted strings in dae's configuration. They are
+# only ever set by root, but a value with a quote or a newline would still
+# corrupt the file it is written to, so the character set is checked instead
+# of trusting the caller.
+valid_secret() {
+	case "$1" in
+		''|*[!A-Za-z0-9._+/-]*) return 1 ;;
+	esac
+	return 0
+}
+
+valid_ui_path() {
+	case "$1" in
+		''|/*) [ -n "$1" ] || return 1 ;;
+		*) return 1 ;;
+	esac
+	case "$1" in
+		*[!A-Za-z0-9/._-]*) return 1 ;;
+	esac
+	return 0
+}
+
 write_api_section() {
-	local listen secret write ui reason
+	local listen secret write ui reason content
 
 	listen="$1"; secret="$2"; write="$3"; ui="$4"
 
@@ -282,8 +304,19 @@ write_api_section() {
 		logger -t dae "generated an api secret; read it with: uci show $CONFIG"
 	fi
 
-	mkdir -p "$(dirname "$API_FILE")"
-	{
+	# The secret and the panel path end up inside quoted strings in dae's
+	# configuration; a stray quote or newline would break the file, so they
+	# are checked before anything is written.
+	if ! valid_secret "$secret"; then
+		logger -t dae "invalid api secret (allowed: A-Za-z0-9 . _ + / -), refusing to start"
+		return 1
+	fi
+	if [ -n "$ui" ] && ! valid_ui_path "$ui"; then
+		logger -t dae "invalid ui_path '$ui' (absolute path, no quotes or spaces), refusing to start"
+		return 1
+	fi
+
+	content="$(
 		echo "api {"
 		echo "  enabled: true"
 		echo "  listen: '$listen'"
@@ -294,8 +327,27 @@ write_api_section() {
 			echo "  ui: '$ui'"
 		fi
 		echo "}"
-	} > "$API_FILE"
-	chmod 600 "$API_FILE"
+	)"
+
+	# The file is rewritten on every start, but the overlay does not need a
+	# write when nothing changed: the secret, the listener and the switch are
+	# what it holds, and none of them moves on a plain restart.
+	mkdir -p "$(dirname "$API_FILE")"
+	if [ ! -f "$API_FILE" ] || [ "$content" != "$(cat "$API_FILE")" ]; then
+		# Written under umask 077, so the file that holds the secret never
+		# exists with a wider mode, not even for a moment.
+		( umask 077; printf '%s\n' "$content" > "$API_FILE.new" ) || {
+			rm -f "$API_FILE.new"
+			logger -t dae "cannot write $API_FILE"
+			return 1
+		}
+		mv -f "$API_FILE.new" "$API_FILE" || {
+			rm -f "$API_FILE.new"
+			logger -t dae "cannot replace $API_FILE"
+			return 1
+		}
+		chmod 600 "$API_FILE"
+	fi
 
 	# The managed layout needs the entry file to include the api file.
 	if [ -f /etc/dae/config.dae ] && ! grep -q "api.dae" /etc/dae/config.dae; then
@@ -304,7 +356,10 @@ write_api_section() {
 }
 
 stop_service() {
-	rm -f "$API_FILE"
+	# The api file is left in place. Deleting it only to write it again on the
+	# next start costs an overlay write and a delete per restart, and it buys
+	# nothing: the secret it holds is also in /etc/config/dae, and the file is
+	# 0600 either way. A start still rewrites it when the values changed.
 	redirects_restore
 }
 

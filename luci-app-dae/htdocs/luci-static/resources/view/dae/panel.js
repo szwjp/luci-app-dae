@@ -281,7 +281,7 @@ return view.extend({
 					// what to do instead of only what is wrong.
 					reason = _('The dae service is not enabled yet. Press Start to enable and start it.');
 				else if (!running)
-					reason = _('The dae service is not running.');
+					reason = _('The dae service is stopped. Press Start to run it.');
 				else if (status.panel_available === false)
 					reason = _('The panel files are missing. Reinstall the luci-app-dae package.');
 				else
@@ -418,7 +418,11 @@ return view.extend({
 		build();
 		update(data.status, data.error);
 		loadSecret();
-		poll.add(refresh, 5);
+		// A hidden tab keeps polling, and every poll is a status RPC. The
+		// page catches up on the first tick after it is visible again.
+		poll.add(function() {
+			return document.hidden ? Promise.resolve() : refresh();
+		}, 5);
 
 		return page;
 	}

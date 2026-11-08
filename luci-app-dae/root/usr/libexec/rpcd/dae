@@ -13,6 +13,12 @@
 . /usr/share/libubox/jshn.sh
 
 CONFIG=dae
+# The LuCI RPC call behind the page times out after 20 seconds by default, and
+# the restart in these methods is followed by a rollback and a second restart.
+# Seven seconds per wait leaves room for both restarts inside that budget; a
+# daemon that needs longer than this to come up would be reported as failed,
+# which is better than a rollback killed halfway by the timeout.
+SETTLE_TRIES=7
 UI_PATH=/usr/share/dae/doona
 DEFAULT_LISTEN=0.0.0.0:9527
 LAN_NETWORK=lan
@@ -318,10 +324,8 @@ stop() {
 restart() {
 	local pid
 
-	if ! set_enabled; then
-		emit_result false settings_write_failed
-		return 1
-	fi
+	# Restarting is not enabling: a service the operator disabled stays
+	# disabled, and the restart then simply fails to bring it up.
 	# The pid the instance had before is what makes the wait below mean
 	# something: a restart that keeps the old process alive for a moment,
 	# or a new process that dies at once, both fail the comparison.
@@ -413,7 +417,7 @@ set_listen() {
 		# tells the new instance apart from the one that was just stopped.
 		pid="$(service_pid)"
 		/etc/init.d/dae restart >/dev/null 2>&1
-		if wait_new_instance "$pid" 15; then
+		if wait_new_instance "$pid" "$SETTLE_TRIES"; then
 			emit_result true listener_applied
 			return 0
 		fi
@@ -424,7 +428,7 @@ set_listen() {
 		uci -q commit "$CONFIG"
 		pid="$(service_pid)"
 		/etc/init.d/dae restart >/dev/null 2>&1
-		wait_new_instance "$pid" 15
+		wait_new_instance "$pid" "$SETTLE_TRIES"
 		emit_result false listener_reverted
 	else
 		emit_result true listener_saved
@@ -468,7 +472,7 @@ set_api_write() {
 		# restart, so the wait compares pids instead of the status word.
 		pid="$(service_pid)"
 		/etc/init.d/dae restart >/dev/null 2>&1
-		if wait_new_instance "$pid" 15; then
+		if wait_new_instance "$pid" "$SETTLE_TRIES"; then
 			emit_result true api_write_applied
 			return 0
 		fi
@@ -479,7 +483,7 @@ set_api_write() {
 		uci -q commit "$CONFIG"
 		pid="$(service_pid)"
 		/etc/init.d/dae restart >/dev/null 2>&1
-		wait_new_instance "$pid" 15
+		wait_new_instance "$pid" "$SETTLE_TRIES"
 		emit_result false api_write_reverted
 	else
 		emit_result true api_write_saved

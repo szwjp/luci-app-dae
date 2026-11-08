@@ -31,6 +31,28 @@ CRONTAB=/etc/crontabs/root
 JOB=/usr/bin/dae-geo-update
 DEFAULT_SCHEDULE="0 2 * * 1"
 
+# The schedule is written into root's crontab, one line per field set. A value
+# with a newline in it would add a second cron line, so the shape is checked:
+# five fields, each made of the characters cron accepts there. Anything else is
+# refused instead of being written.
+valid_schedule() {
+	local rest
+
+	# Five whitespace-separated fields. Counting with awk instead of
+	# "set -- $1" keeps the shell from expanding the "*" fields into file
+	# names: init scripts run with the working directory at "/".
+	[ "$(printf '%s\n' "$1" | awk '{ n += NF } END { print n }')" -eq 5 ] || return 1
+
+	# After the separators are removed, only characters cron accepts may be
+	# left. A newline would not survive this, which is the point: it is what
+	# would turn the value into a second crontab line.
+	rest="$(printf '%s' "$1" | tr -d ' \t')"
+	case "$rest" in
+		''|*[!0-9A-Za-z*/,?#-]*) return 1 ;;
+	esac
+	return 0
+}
+
 schedule() {
 	local value
 	config_load "$CONFIG"
@@ -84,13 +106,18 @@ drop_job() {
 # The entry is found by its program path, so a line left over from an earlier
 # schedule is replaced instead of piling up.
 install_job() {
-	local line
+	local line value
+	value="$(schedule)"
+	if ! valid_schedule "$value"; then
+		logger -t dae-geo-update "invalid schedule '$value', the crontab is left alone"
+		return 1
+	fi
 	mkdir -p /etc/crontabs || return 1
 	touch "$CRONTAB" || return 1
 	chmod 600 "$CRONTAB"
 
 	drop_job > "$CRONTAB.new" 2>/dev/null
-	line="$(schedule) $JOB >/dev/null 2>&1"
+	line="$value $JOB >/dev/null 2>&1"
 	echo "$line" >> "$CRONTAB.new"
 	mv "$CRONTAB.new" "$CRONTAB" || return 1
 	chmod 600 "$CRONTAB"

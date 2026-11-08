@@ -15,23 +15,32 @@
 
 ## 安装
 
+### 系统要求
+
+需要带 **apk v3** 的系统，例如 ImmortalWrt 25.12 及更新版本；仍用 opkg 的
+OpenWrt 24.10 及更早版本装不上这些包。内核需要带 BTF（见「架构」一节）。
+
+```sh
+apk --version   # 需要 apk-tools 3.x
+```
+
 软件包以 `.apk` 形式发布在 [Releases 页面](https://github.com/szwjp/luci-app-dae/releases)。
 守护进程按架构分发，按设备选对应的一个：
 
 | 设备架构 | 包 |
 |---|---|
-| x86_64 | `dae-2.1.1-r7-x86_64.apk` |
-| arm64 | `dae-2.1.1-r7-aarch64_generic.apk` |
-| riscv64 | `dae-2.1.1-r7-riscv64_generic.apk` |
+| x86_64 | `dae-2.1.1-r8-x86_64.apk` |
+| arm64 | `dae-2.1.1-r8-aarch64_generic.apk` |
+| riscv64 | `dae-2.1.1-r8-riscv64_generic.apk` |
 
 OpenWrt / ImmortalWrt 的 apk v3 只认本地文件，不接受 URL，所以先把包下载下来再装：
 
 ```sh
 cd /tmp
 wget -O dae.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r07/dae-2.1.1-r7-x86_64.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r08/dae-2.1.1-r8-x86_64.apk
 wget -O luci-app-dae.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r07/luci-app-dae-2026.11.08-r3.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r08/luci-app-dae-2026.11.08-r4.apk
 apk add --allow-untrusted ./dae.apk ./luci-app-dae.apk
 ```
 
@@ -40,7 +49,7 @@ apk add --allow-untrusted ./dae.apk ./luci-app-dae.apk
 ```sh
 cd /tmp
 wget -O luci-i18n-dae-zh-cn.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r07/luci-i18n-dae-zh-cn-2026.11.08-r3.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r08/luci-i18n-dae-zh-cn-2026.11.08-r4.apk
 apk add --allow-untrusted ./luci-i18n-dae-zh-cn.apk
 ```
 
@@ -184,6 +193,11 @@ dae 拒绝挂到会发送 ICMP 重定向的接口上，重定向会和 dae 装�
 * 面板的「出站模式」（规则/直连/全局）写在含 `routing` 段的那个文件里，也就是
   `config.d/routing.dae`；入口文件 `config.dae` 只读，面板不会去改它。
 
+菜单对任何已登录的 LuCI 用户可见，实际能做什么由 rpcd ACL 决定：只授
+`luci-app-dae-read` 的账号只能看状态，`luci-app-dae-admin` 才能启停和改设置。
+只授 admin、不授 read 的账号以前看不到菜单，现在也能看到（页面里的操作仍按
+ACL 拦截）。
+
 LuCI 页面通过 rpcd 的 exec 后端读取状态。软件包安装后会自动 reload rpcd；
 如果页面报"读取 dae 服务状态失败"，说明后端没被注册，执行
 `/etc/init.d/rpcd reload` 即可。
@@ -232,7 +246,9 @@ eBPF 程序需要内核带 BTF。ImmortalWrt 与 OpenWrt 24.10+ 的内核自带
 ## 构建
 
 软件包用 `apk-tools` 直接打包，不走 OpenWrt SDK：`.github/build-pkg.sh` 组装
-staging 目录，`apk mkpkg` 写出容器格式。
+staging 目录，`apk mkpkg` 写出容器格式。`luci-app-dae/Makefile` 只是这个脚本
+读取的元数据，没有 `include luci.mk`，不能直接放进 OpenWrt 的 `package/`
+目录参与官方构建。
 
 守护进程二进制**不在本仓库里**，构建前从引擎发布取。`dae/digests.txt`
 固定了三个架构归档的 sha256，构建会拒绝不匹配的归档；升级引擎时该文件里的
@@ -262,7 +278,10 @@ fakeroot bash .github/build-pkg.sh luci-app-dae
 
 ## 许可
 
-* `dae`：AGPL-3.0-only
-* `luci-app-dae`（doona）：GPL-3.0-only
+* `dae`：AGPL-3.0-only。本仓库分发的二进制来自 `szwjp/dae` 的
+  [`v2026.11.07-nativeapi-r4`](https://github.com/szwjp/dae/tree/v2026.11.07-nativeapi-r4)
+  构建，对应源码就是该 tag 的源码树。
+* `luci-app-dae`（doona）：GPL-3.0-only。面板产物的源仓库、构建戳与摘要见
+  `luci-app-dae/assets/doona/PROVENANCE.md`。
 
 AGPL 与 GPL 兼容。两个包是各自独立的程序，通过 HTTP 通信。

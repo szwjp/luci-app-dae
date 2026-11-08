@@ -355,6 +355,14 @@ dae_running() {
 	/etc/init.d/dae status 2>/dev/null | grep -q '^running$'
 }
 
+# The pid of the running daemon, empty when there is none. procd stops and
+# starts asynchronously, so the status word is still "running" for the old
+# instance right after a restart: only a different pid proves that the new
+# one is up.
+dae_pid() {
+	pidof dae 2>/dev/null | awk '{print $1}'
+}
+
 # The service is enabled but not running: stopped by hand, or it failed to
 # start. The new files are already installed and are picked up at the next
 # start, so there is nothing to restart and nothing to roll back. Restarting
@@ -365,12 +373,17 @@ if ! dae_running; then
 	exit 0
 fi
 
+before="$(dae_pid)"
 restart_dae
 i=0
 OK=0
 while [ "$i" -lt "$START_TIMEOUT" ]; do
 	sleep 2
-	if dae_running; then
+	pid="$(dae_pid)"
+	# A new pid alone is not enough: procd respawns a daemon that dies at
+	# once, and that instance is not a success either. It also has to report
+	# running for the moment it is checked.
+	if [ -n "$pid" ] && [ "$pid" != "$before" ] && dae_running; then
 		OK=1
 		break
 	fi
@@ -387,9 +400,11 @@ for f in $CHANGED; do
 	[ -f "$BACKUP_DIR/$f.bak" ] || continue
 	cp -f "$BACKUP_DIR/$f.bak" "$DIR/.$f.restore" && mv -f "$DIR/.$f.restore" "$DIR/$f"
 done
+before="$(dae_pid)"
 restart_dae
 sleep 5
-if dae_running; then
+pid="$(dae_pid)"
+if [ -n "$pid" ] && [ "$pid" != "$before" ] && dae_running; then
 	log "rolled back to the previous geo data, dae is running again"
 else
 	log "dae is still not running after the rollback, it needs a human"
