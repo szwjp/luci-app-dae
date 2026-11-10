@@ -221,7 +221,7 @@ rpcd 读取 init 脚本时只看开头若干行里的 `USE_PROCD`、`START`、`S
 ## 架构
 
 `dae` 包发布的是预编译二进制，所以每个架构一个包：x86_64、arm64、riscv64。
-二进制来自 [szwjp/dae](https://github.com/szwjp/dae/releases/tag/v2026.11.07-nativeapi-r4)
+二进制来自 [szwjp/dae](https://github.com/szwjp/dae/releases/tag/v2026.11.10-nativeapi-r5)
 的发布产物，CI 取下来校验摘要后重新打包，不重复编译。
 面板包与翻译包是纯静态构建，各架构通用。
 
@@ -255,7 +255,7 @@ staging 目录，`apk mkpkg` 写出容器格式。`luci-app-dae/Makefile` 只是
 `tag` 行和 `.github/workflows/build.yml` 的 `DAE_BINARY_TAG` 必须一起改：
 
 ```sh
-DAE_TAG=v2026.11.07-nativeapi-r4
+DAE_TAG=v2026.11.10-nativeapi-r5
 curl -fsSL -o dae.tar.xz \
   "https://github.com/szwjp/dae/releases/download/$DAE_TAG/dae-linux-x86_64.tar.xz"
 tar -xJf dae.tar.xz
@@ -279,7 +279,7 @@ fakeroot bash .github/build-pkg.sh luci-app-dae
 ## 许可
 
 * `dae`：AGPL-3.0-only。本仓库分发的二进制来自 `szwjp/dae` 的
-  [`v2026.11.07-nativeapi-r4`](https://github.com/szwjp/dae/tree/v2026.11.07-nativeapi-r4)
+  [`v2026.11.10-nativeapi-r5`](https://github.com/szwjp/dae/tree/v2026.11.10-nativeapi-r5)
   构建，对应源码就是该 tag 的源码树。
 * `luci-app-dae`（doona）：GPL-3.0-only。面板产物的源仓库、构建戳与摘要见
   `luci-app-dae/assets/doona/PROVENANCE.md`。
