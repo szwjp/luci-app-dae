@@ -29,18 +29,18 @@ apk --version   # 需要 apk-tools 3.x
 
 | 设备架构 | 包 |
 |---|---|
-| x86_64 | `dae-2.1.1-r10-x86_64.apk` |
-| arm64 | `dae-2.1.1-r10-aarch64_generic.apk` |
-| riscv64 | `dae-2.1.1-r10-riscv64_generic.apk` |
+| x86_64 | `dae-2.1.1-r12-x86_64.apk` |
+| arm64 | `dae-2.1.1-r12-aarch64_generic.apk` |
+| riscv64 | `dae-2.1.1-r12-riscv64_generic.apk` |
 
 OpenWrt / ImmortalWrt 的 apk v3 只认本地文件，不接受 URL，所以先把包下载下来再装：
 
 ```sh
 cd /tmp
 wget -O dae.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r10/dae-2.1.1-r10-x86_64.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r12/dae-2.1.1-r12-x86_64.apk
 wget -O luci-app-dae.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r10/luci-app-dae-2026.11.08-r6.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r12/luci-app-dae-2026.11.11-r1.apk
 apk add --allow-untrusted ./dae.apk ./luci-app-dae.apk
 ```
 
@@ -49,7 +49,7 @@ apk add --allow-untrusted ./dae.apk ./luci-app-dae.apk
 ```sh
 cd /tmp
 wget -O luci-i18n-dae-zh-cn.apk \
-  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r10/luci-i18n-dae-zh-cn-2026.11.08-r6.apk
+  https://github.com/szwjp/luci-app-dae/releases/download/v2.1.1-r12/luci-i18n-dae-zh-cn-2026.11.11-r1.apk
 apk add --allow-untrusted ./luci-i18n-dae-zh-cn.apk
 ```
 

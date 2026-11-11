@@ -10,8 +10,8 @@
 # or later.
 
 PKG_NAME:=luci-app-dae
-PKG_VERSION:=2026.11.08
-PKG_RELEASE:=6
+PKG_VERSION:=2026.11.11
+PKG_RELEASE:=1
 
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>
