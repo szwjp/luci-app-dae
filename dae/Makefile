@@ -16,7 +16,7 @@
 
 PKG_NAME:=dae
 PKG_VERSION:=2.1.1
-PKG_RELEASE:=12
+PKG_RELEASE:=5   #跟着上游szwjp/dae的nativeapi-r5走，上游没变就不变
 
 PKG_LICENSE:=AGPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>
