@@ -10,7 +10,8 @@
 # or later.
 
 PKG_NAME:=luci-app-dae
-PKG_VERSION:=2026.11.11 #跟着触发发版的自然日期走
+# 版本跟着触发发版的自然日期走。
+PKG_VERSION:=2026.11.11
 PKG_RELEASE:=3
 
 PKG_LICENSE:=GPL-3.0-only

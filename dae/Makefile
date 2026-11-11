@@ -16,7 +16,8 @@
 
 PKG_NAME:=dae
 PKG_VERSION:=2.1.1
-PKG_RELEASE:=13   # 本次引擎是 nativeapi-r10；包序号不能取 10（v2.1.1-r10 已被占用），按发布递增
+# 本次引擎是 nativeapi-r10；包序号不能取 10（v2.1.1-r10 已被占用），按发布递增。
+PKG_RELEASE:=13
 
 PKG_LICENSE:=AGPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>
