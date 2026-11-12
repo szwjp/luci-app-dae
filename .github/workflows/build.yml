@@ -194,16 +194,17 @@ jobs:
           file "dae/assets/${{ matrix.arch }}/dae"
 
       - name: Build packages
-        env:
-          PKG_ASSET_DIR: assets/${{ matrix.arch }}
-          PKG_ARCH_OVERRIDE: ${{ matrix.apk_arch }}
         run: |
           set -euo pipefail
-          fakeroot bash .github/build-pkg.sh dae
+          PKG_ASSET_DIR="assets/${{ matrix.arch }}" \
+          PKG_ARCH_OVERRIDE="${{ matrix.apk_arch }}" \
+            fakeroot bash .github/build-pkg.sh dae
           # The LuCI page is architecture independent and carries no panel
           # assets (the doona package provides those), so one leg builds it.
+          # It takes neither override: the dae ones are scoped to the command
+          # above.
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            PKG_ASSET_DIR= PKG_ARCH_OVERRIDE= fakeroot bash .github/build-pkg.sh luci-app-dae
+            fakeroot bash .github/build-pkg.sh luci-app-dae
           fi
           shopt -s nullglob
           apks=(out/*.apk)
@@ -303,9 +304,11 @@ jobs:
           # The published tag is what the release is called and what the notes
           # link to, so the rest of the job works with it.
           TAG_VERSION="$ON_TAG"
-          echo "VERSION=$EXPECTED" >> "$GITHUB_ENV"
-          echo "PANEL_VERSION=$PANEL" >> "$GITHUB_ENV"
-          echo "TAG_VERSION=$TAG_VERSION" >> "$GITHUB_ENV"
+          {
+            echo "VERSION=$EXPECTED"
+            echo "PANEL_VERSION=$PANEL"
+            echo "TAG_VERSION=$TAG_VERSION"
+          } >> "$GITHUB_ENV"
           echo "发布版本 v$TAG_VERSION（引擎包 $EXPECTED，面板包 $PANEL）"
 
       - name: Checksum the packages
@@ -314,7 +317,7 @@ jobs:
         run: |
           set -euo pipefail
           cd release
-          sha256sum *.apk > SHA256SUMS
+          sha256sum ./*.apk > SHA256SUMS
           cat SHA256SUMS
 
       - name: Write release notes
