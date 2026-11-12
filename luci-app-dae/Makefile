@@ -11,9 +11,8 @@
 # or later.
 
 PKG_NAME:=luci-app-dae
-# 版本跟着触发发版的自然日期走。
-PKG_VERSION:=2026.11.12
-PKG_RELEASE:=1
+PKG_VERSION:=0.1.0
+PKG_RELEASE:=rc7
 
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>
