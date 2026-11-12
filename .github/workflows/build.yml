@@ -43,7 +43,7 @@ env:
   LUCI_REF: '217e71dc75dae31ab670b0e602162a76559a0b47'
   # The release of szwjp/dae that carries the daemon. It must hold the
   # linux-x86_64, linux-arm64 and linux-riscv64_rva23u64 archives.
-  DAE_BINARY_TAG: 'v2026.11.12-nativeapi-r11'
+  DAE_BINARY_TAG: 'v2026.11.12-nativeapi-r12'
 
 jobs:
   build:

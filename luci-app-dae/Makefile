@@ -12,7 +12,7 @@
 
 PKG_NAME:=luci-app-dae
 PKG_VERSION:=0.1.0
-PKG_RELEASE:=7
+PKG_RELEASE:=8
 
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>
