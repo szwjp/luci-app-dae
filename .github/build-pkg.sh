@@ -178,6 +178,11 @@ fi
 # ones; a package built on a Mac would ship them (tar and cp both carry them).
 # They are not part of any package.
 find "$STAGE" -name '._*' -type f -delete 2>/dev/null || true
+# apk records extended attributes by default. On a Mac every copied file
+# carries com.apple.provenance (which cannot be removed, even by xattr), and
+# the target then warns about every file it cannot apply it to. No package
+# here needs xattrs, so mkpkg is told to leave them out (see the --no-xattrs
+# options below).
 
 find "$STAGE/etc/init.d" -type f -exec chmod 0755 {} + 2>/dev/null || true
 find "$STAGE/etc/dae" -type f -exec chmod 0600 {} + 2>/dev/null || true
@@ -186,9 +191,12 @@ find "$STAGE/etc/config" -type f -exec chmod 0600 {} + 2>/dev/null || true
 find "$STAGE/usr/libexec/rpcd" -type f -exec chmod 0755 {} + 2>/dev/null || true
 
 # The files belong to root on the device. Under fakeroot (which the workflow
-# uses) the chown is recorded as root; without it the command fails and the
-# staging tree keeps its current owner.
-chown -R 0:0 "$STAGE" 2>/dev/null || true
+# uses) the chown is recorded as root. Without it the command fails on a Mac
+# and the package would carry the builder's uid, so say so instead of shipping
+# it silently.
+if ! chown -R 0:0 "$STAGE" 2>/dev/null; then
+	echo "warning: chown to root failed; the package will carry the builder's uid (run under fakeroot)" >&2
+fi
 
 # The file list apk keeps for the package. The type list is spelled out
 # instead of "find -type f,l": the comma form is a GNU extension and the BSD
@@ -254,6 +262,7 @@ cat > "$TEMP_DIR/pre-deinstall" <<-EOF
 EOF
 
 apk mkpkg \
+	--no-xattrs \
 	--info "name:$PKG_NAME" \
 	--info "version:$VERSION" \
 	--info "description:$PKG_DESCRIPTION" \
@@ -298,6 +307,7 @@ if [ -d "$PKG_DIR/po" ]; then
 		mv "$TEMP_DIR/$i18n_name.list" "$i18n_dir/lib/apk/packages/$i18n_name.list"
 
 		apk mkpkg \
+			--no-xattrs \
 			--info "name:$i18n_name" \
 			--info "version:$VERSION" \
 			--info "description:$PKG_DESCRIPTION ($locale translation)" \

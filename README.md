@@ -242,6 +242,10 @@ fakeroot bash .github/build-pkg.sh luci-app-dae
 需要 `apk` (apk-tools v3) 与 `po2lmo`（翻译包）；CI 里两者都编译好后使用。
 面板的构建与发布在 [szwjp/doona](https://github.com/szwjp/doona) 里，不在本仓库。
 
+包里的文件归 root。在 macOS 上本地打包时没有 fakeroot，`chown` 会失败，包会带上
+构建者的 uid（安装后显示为 nobody）；构建脚本会对此告警。正式出包走 CI（Linux +
+fakeroot），或者手动在 Linux 上跑。
+
 ## 许可
 
 * `dae`：AGPL-3.0-only。本仓库分发的二进制来自 `szwjp/dae` 的发布，对应源码就是
