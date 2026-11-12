@@ -15,7 +15,7 @@ PKG_VERSION:=0.1.0
 # The upstream version is the prerelease 0.1.0-rc.9; this repository packages
 # it as 0.1.0-r9, the same number luci-app-dae carries. It sorts after the
 # separately published doona 0.1.0_rc8-r1, so an upgrade replaces that package.
-PKG_RELEASE:=10
+PKG_RELEASE:=9
 
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>
