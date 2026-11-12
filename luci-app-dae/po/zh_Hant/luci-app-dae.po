@@ -202,3 +202,27 @@ msgstr "dae 未執行且原有檔案無法還原，請查看系統記錄。"
 
 msgid "The geoip.dat and geosite.dat files back the geoip: and geosite: rules. dae reads them when it starts, so it is restarted after an update."
 msgstr "geoip.dat 與 geosite.dat 是 geoip: 與 geosite: 規則的資料來源。dae 只在啟動時讀取，因此更新後會重新啟動 dae。"
+
+msgid "Panel writes"
+msgstr "面板寫入"
+
+msgid "Off — the panel can only read the configuration."
+msgstr "關閉 — 面板只能讀取設定。"
+
+msgid "On — the panel can change the configuration, nodes and groups."
+msgstr "開啟 — 面板可以修改設定、節點與群組。"
+
+msgid "Allow panel writes"
+msgstr "允許面板寫入"
+
+msgid "Stop panel writes"
+msgstr "停止面板寫入"
+
+msgid "Configuration, nodes, groups and rules can only be edited in the panel while writes are on."
+msgstr "只有在寫入開啟時，才能在面板裡編輯設定、節點、群組與規則。"
+
+msgid "The panel may now change the configuration."
+msgstr "面板現在可以修改設定。"
+
+msgid "The panel can only read the configuration now."
+msgstr "面板現在只能讀取設定。"

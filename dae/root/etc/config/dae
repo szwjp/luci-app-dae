@@ -3,7 +3,11 @@ config dae 'main'
 	option config_file '/etc/dae/config.dae'
 	option api_listen '0.0.0.0:9527'
 	option api_secret ''
-	option api_write '0'
+	# Let the doona panel edit the configuration. Without it every
+	# configuration page of the panel is read-only, which reads as a broken
+	# install; the panel still needs the API secret, and the switch can be
+	# turned off in the LuCI page (or here) at any time.
+	option api_write '1'
 	# The LAN interface dae attaches to. Empty means the interface is taken
 	# from the dae configuration file (config.d/global.dae).
 	option lan_interface ''

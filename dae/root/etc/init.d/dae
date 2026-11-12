@@ -25,6 +25,8 @@ STOP=10
 
 CONFIG=dae
 PROG=/usr/bin/dae
+# Set when start_service fails before procd is handed the instance.
+START_FAILED=0
 # The panel is shipped by the doona package, which installs it here. dae serves
 # it from its own listener under /ui/.
 UI_PATH=/usr/share/doona
@@ -135,7 +137,12 @@ start_service() {
 	config_get api_secret main api_secret ""
 	config_get api_write main api_write "0"
 
-	write_api_section "$api_listen" "$api_secret" "$api_write" || return 1
+	write_api_section "$api_listen" "$api_secret" "$api_write" || {
+		# service_started reports this below: rc.common loses the return
+		# value of start_service, so the failure has to survive in a variable.
+		START_FAILED=1
+		return 1
+	}
 
 	device="$(lan_interface)"
 	redirects_disable "$device"
@@ -164,6 +171,9 @@ service_started() {
 	config_load "$CONFIG"
 	config_get_bool enabled main enabled 0
 	[ "$enabled" -eq "1" ] || return 1
+	# A start that could not write /etc/dae/api.dae never reached procd, and
+	# the daemon must not be reported as running.
+	[ "$START_FAILED" = "0" ] || return 1
 	return 0
 }
 
@@ -195,7 +205,7 @@ normalize_listen() {
 # port in 1..65535. A wrong address is reported here, instead of leaving dae
 # to fail with a message nobody reads.
 check_listen() {
-	local listen="$1" host port
+	local listen="$1" host port bracketed=0
 
 	host="${listen%:*}"
 	port="${listen##*:}"
@@ -215,10 +225,13 @@ check_listen() {
 		return 1
 	fi
 
+	# dae splits "host:port" itself, so an IPv6 address has to be bracketed:
+	# "[::1]:9527" is one address, "::1:9527" is seven colons it cannot read.
 	case "$host" in
-		\[*\]*)
+		\[*)
+			bracketed=1
 			host="${host#\[}"
-			host="${host%\]}"
+			host="${host%%\]*}"
 			;;
 	esac
 
@@ -228,6 +241,10 @@ check_listen() {
 			return 1
 			;;
 		*:*)
+			if [ "$bracketed" -ne 1 ]; then
+				echo "an IPv6 listener needs brackets, as in [::1]:9527"
+				return 1
+			fi
 			case "$host" in
 				*[!0-9a-fA-F:]*)
 					echo "the host is not a numeric address"

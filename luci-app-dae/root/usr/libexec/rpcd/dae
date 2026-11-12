@@ -175,11 +175,15 @@ listen_addresses() {
 }
 
 status() {
-	local enabled listen port panel_available running addresses lan
+	local enabled listen port panel_available running addresses lan write
 
 	config_load "$CONFIG"
 	config_get_bool enabled main enabled 0
 	config_get listen main api_listen "$DEFAULT_LISTEN"
+	# The switch the panel's writes depend on: dae refuses every configuration
+	# write without it, and the panel then shows the whole configuration as
+	# read-only.
+	config_get_bool write main api_write 0
 
 	port="$(listen_port "$listen")"
 	case "$port" in
@@ -194,6 +198,7 @@ status() {
 	json_init
 	json_add_boolean enabled "$enabled"
 	json_add_boolean running "$running"
+	json_add_boolean write "$write"
 	json_add_string listen "$listen"
 	json_add_int port "$port"
 	json_add_boolean panel_available "$panel_available"
@@ -268,6 +273,59 @@ restart() {
 		emit_result true restarted
 	else
 		emit_result false restart_failed
+	fi
+}
+
+# Whether the panel may change the configuration. dae reads this switch only
+# at startup: the api section is restart-required, so the value is saved and
+# the service restarted in one step. Without it every configuration page of
+# doona is read-only, which is why the LuCI page offers the switch.
+set_write() {
+	local raw value pid
+
+	# rpcd hands the call's parameters to an exec backend on stdin. jsonfilter
+	# is the normal way to read them; the case below keeps the switch working
+	# on an image that has none, since the only parameter is one boolean.
+	raw="$(cat 2>/dev/null)"
+	value="$(printf '%s' "$raw" | jsonfilter -e '@.value' 2>/dev/null)"
+	if [ -z "$value" ]; then
+		case "$raw" in
+			*'"value":true'*|*'"value":1'*) value=1 ;;
+			*'"value":false'*|*'"value":0'*) value=0 ;;
+		esac
+	fi
+	case "$value" in
+		true|1) value=1 ;;
+		false|0) value=0 ;;
+		*)
+			emit_result false invalid_operation
+			return 1
+			;;
+	esac
+
+	uci -q set "$CONFIG.main.api_write=$value" || {
+		emit_result false settings_write_failed
+		return 1
+	}
+	uci -q commit "$CONFIG" || {
+		emit_result false settings_write_failed
+		return 1
+	}
+
+	# The switch only takes effect in a new process: the init script rewrites
+	# /etc/dae/api.dae on every start, so editing the file by hand does not
+	# survive a restart either.
+	pid="$(service_pid)"
+	/etc/init.d/dae restart >/dev/null 2>&1
+	if ! wait_new_instance "$pid" "$WAIT_START" "$(configured_port)"; then
+		emit_result false restart_failed
+		return 1
+	fi
+
+	if [ "$value" = 1 ]; then
+		emit_result true writes_enabled
+	else
+		emit_result true writes_disabled
 	fi
 }
 
@@ -409,7 +467,7 @@ geo_update() {
 # methods with the "list" argument and reaches a method with "call <method>".
 case "$1" in
 list)
-	echo '{"status":{},"secret":{},"start":{},"stop":{},"restart":{},"geo_status":{},"geo_update":{}}'
+	echo '{"status":{},"secret":{},"start":{},"stop":{},"restart":{},"set_write":{"value":0},"geo_status":{},"geo_update":{}}'
 	;;
 call)
 	case "$2" in
@@ -418,6 +476,7 @@ call)
 		start) start ;;
 		stop) stop ;;
 		restart) restart ;;
+		set_write) set_write ;;
 		geo_status) geo_status ;;
 		geo_update) geo_update ;;
 		*) emit_result false invalid_operation ;;

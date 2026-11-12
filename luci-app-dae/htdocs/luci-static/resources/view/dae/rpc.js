@@ -15,6 +15,7 @@ const callSecret = rpc.declare({ object: 'dae', method: 'secret', expect: { '': 
 const callStart = rpc.declare({ object: 'dae', method: 'start', expect: { '': {} }, reject: true });
 const callStop = rpc.declare({ object: 'dae', method: 'stop', expect: { '': {} }, reject: true });
 const callRestart = rpc.declare({ object: 'dae', method: 'restart', expect: { '': {} }, reject: true });
+const callSetWrite = rpc.declare({ object: 'dae', method: 'set_write', params: [ 'value' ], expect: { '': {} }, reject: true });
 const callGeoStatus = rpc.declare({ object: 'dae', method: 'geo_status', expect: { '': {} }, reject: true });
 const callGeoUpdate = rpc.declare({ object: 'dae', method: 'geo_update', expect: { '': {} }, reject: true });
 
@@ -27,7 +28,7 @@ let pageStylesInstalled = false;
  * It has to be raised whenever dae.css changes; the package build stamps
  * the package version in.
  */
-const STYLE_VERSION = '20261112';
+const STYLE_VERSION = '20261113';
 
 function installStyles() {
 	if (pageStylesInstalled || document.getElementById('dae-page-styles'))
@@ -198,6 +199,8 @@ function statusIssue(token) {
 		started: _('The dae service started.'),
 		stopped: _('The dae service stopped.'),
 		restarted: _('The dae service restarted.'),
+		writes_enabled: _('The panel may now change the configuration.'),
+		writes_disabled: _('The panel can only read the configuration now.'),
 		start_failed: _('The dae service did not start. Check the system log.'),
 		stop_failed: _('The dae service did not stop. Check the system log.'),
 		restart_failed: _('The dae service did not restart. Check the system log.'),
@@ -239,6 +242,10 @@ return baseclass.extend({
 	start: callStart,
 	stop: callStop,
 	restart: callRestart,
+	setWrite: callSetWrite,
+	writeEnabled: function(status) {
+		return !!(status && status.write === true);
+	},
 	geoStatus: callGeoStatus,
 	geoUpdate: callGeoUpdate,
 	panelUrl: panelUrl,

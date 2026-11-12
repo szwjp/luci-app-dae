@@ -91,7 +91,7 @@ uci get dae.main.api_secret
 | `config_file` | `/etc/dae/config.dae` | 运行的配置文件 |
 | `api_listen` | `0.0.0.0:9527` | native API 监听地址 |
 | `api_secret` | 首次启动自动生成 | API 的 Bearer 令牌 |
-| `api_write` | `0` | 允许面板通过 API 写配置 |
+| `api_write` | `1` | 允许面板写配置。默认打开，装完面板即可用；页面「服务」标签上有同名开关，改完会自动重启服务 |
 | `lan_interface` | 空 | 覆盖 LAN 接口名，默认从 `config.d/global.dae` 读取 |
 
 监听地址与写权限都用 UCI 改，改完重启服务：
@@ -112,8 +112,8 @@ uci commit dae
 `api_secret` 和面板使用的 Bearer 令牌在局域网里明文传输，浏览器还会把它存下来。
 默认保留 `0.0.0.0` 是为了装完就能从 LAN 打开面板，代价是：
 
-* **密钥等同于 dae 的控制权。** `api_write=1` 时，拿到密钥的人可以改分流配置；
-  默认 `api_write=0`，两项都打开时才可写。
+* **密钥等同于 dae 的控制权。** `api_write=1`（默认）时，拿到密钥的人可以改分流配置。
+  只想要只读面板就关掉「面板写入」：`uci set dae.main.api_write='0'`。
 * OpenWrt 默认防火墙拒绝 WAN 入站，所以暴露面主要是 LAN。
 * 只在本机用面板时，把监听改成回环（本机浏览器还需要 SSH 端口转发）：
   `uci set dae.main.api_listen='127.0.0.1:9527'`。
@@ -129,7 +129,11 @@ uci commit dae
   `uci get dae.main.api_secret` 读取。
 * 面板的「出站模式」（规则/直连/全局）写在含 `routing` 段的文件里，也就是
   `config.d/routing.dae`；入口文件 `config.dae` 只读，面板不会去改它。
-* 要让面板能改配置，先打开 `api_write`（见上），文档里也有命令。
+* 面板能不能改配置取决于 `api_write`，**默认是开的**。关掉后 doona 会把整个配置、
+  节点、组与规则显示为只读（「配置为只读」），只能在面板里看。开关就在页面的
+  **面板写入** 一行：切换后服务会重启一次，面板需要刷新页面才能看到新的写入状态。来源是 UCI 的
+  `dae.main.api_write`，由 init 脚本写进 `/etc/dae/api.dae`，所以别直接改那个文件
+  ——每次启动都会被 UCI 的值覆盖。
 
 菜单对任何已登录的 LuCI 用户可见，实际能做什么由 rpcd ACL 决定：只授
 `luci-app-dae-read` 的账号只能看状态与 Geo 信息，`luci-app-dae-admin` 才能启停、

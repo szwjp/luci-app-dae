@@ -143,6 +143,23 @@ return view.extend({
 		statusCard.appendChild(el('div', 'dae-meta', [ metaItem(_('Listener'), ui.listen) ]));
 		statusCard.appendChild(ui.reason);
 
+		// dae refuses every configuration write unless its `api` section turns
+		// them on, and then the whole doona configuration page is read-only.
+		// The switch lives in UCI and is written into the api section by the
+		// init script, so this is the one place an operator can flip it.
+		ui.writeState = el('span', 'dae-write-state', '—');
+		ui.writeNote = el('p', 'dae-note',
+			_('Configuration, nodes, groups and rules can only be edited in the panel while writes are on.'));
+		ui.writeToggle = button(_('Allow panel writes'), 'cbi-button', runWriteToggle);
+		statusCard.appendChild(el('div', 'dae-write', [
+			el('div', 'dae-write-text', [
+				el('span', 'dae-meta-label', _('Panel writes')),
+				ui.writeState,
+				ui.writeNote
+			]),
+			ui.writeToggle
+		]));
+
 		ui.secretValue = el('code', 'dae-secret', _('Loading…'));
 		ui.secretShow = button(_('Show'), 'cbi-button');
 		ui.secretCopy = button(_('Copy'), 'cbi-button');
@@ -226,6 +243,16 @@ return view.extend({
 			ui.badge.textContent = running ? _('Running') : (enabled ? _('Stopped') : _('Disabled'));
 			ui.listen.textContent = status.listen || '—';
 
+			const write = dae.writeEnabled(status);
+			ui.writeState.textContent = write
+				? _('On — the panel can change the configuration, nodes and groups.')
+				: _('Off — the panel can only read the configuration.');
+			ui.writeState.className = 'dae-write-state ' + (write ? 'dae-write-state--on' : 'dae-write-state--off');
+			ui.writeToggle.textContent = write ? _('Stop panel writes') : _('Allow panel writes');
+			// The value is read by dae only when it starts, and a stopped
+			// service has nothing to restart into.
+			ui.writeToggle.disabled = busy || !running;
+
 			const url = dae.panelUrl(status);
 			if (url) {
 				ui.openPanel.setAttribute('href', url);
@@ -308,6 +335,28 @@ return view.extend({
 			updateStatus(statusData, null);
 
 			dae[action]().then(dae.ensureOk).then(function(result) {
+				message.textContent = dae.resultMessage(result, _('The operation completed.'));
+			}).catch(function(error) {
+				message.textContent = dae.errorMessage(error, _('The operation failed.'));
+			}).finally(function() {
+				busy = false;
+				refreshStatus();
+			});
+		}
+
+		// Turning writes on restarts dae: the api section is read at startup
+		// only, and the init script writes the switch into it then.
+		function runWriteToggle() {
+			if (busy)
+				return;
+
+			const target = !dae.writeEnabled(statusData);
+
+			busy = true;
+			message.textContent = _('Working…');
+			updateStatus(statusData, null);
+
+			dae.setWrite(target).then(dae.ensureOk).then(function(result) {
 				message.textContent = dae.resultMessage(result, _('The operation completed.'));
 			}).catch(function(error) {
 				message.textContent = dae.errorMessage(error, _('The operation failed.'));
