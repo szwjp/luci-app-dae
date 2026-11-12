@@ -266,12 +266,13 @@ jobs:
           PANEL_V="$(sed -n 's/^PKG_VERSION:=//p' luci-app-dae/Makefile | head -1)"
           PANEL_R="$(sed -n 's/^PKG_RELEASE:=//p' luci-app-dae/Makefile | head -1)"
           # Must match build-pkg.sh: a numeric release is the -rN number, a
-          # leading non-digit (rc7) is a prerelease suffix of its own.
+          # leading non-digit (rc7) is a prerelease suffix, spelled with an
+          # underscore because apk rejects a hyphen there.
           pkg_version() {
             case "$2" in
               '') printf '%s' "$1" ;;
               [0-9]*) printf '%s-r%s' "$1" "$2" ;;
-              *) printf '%s-%s' "$1" "$2" ;;
+              *) printf '%s_%s' "$1" "$2" ;;
             esac
           }
           EXPECTED="$(pkg_version "$MK_V" "$MK_R")"

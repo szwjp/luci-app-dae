@@ -103,13 +103,14 @@ PKG_DESCRIPTION="$(get_mk_value "PKG_DESCRIPTION")"
 [ -n "$PKG_VERSION" ] || { echo "error: PKG_VERSION missing in $MAKEFILE" >&2; exit 1; }
 
 # A numeric PKG_RELEASE is OpenWrt's -rN number. A leading non-digit (rc7) is
-# a prerelease suffix that stands on its own: 0.1.0 with rc7 is 0.1.0-rc7,
+# a prerelease suffix of its own, and apk only accepts it with an underscore:
+# 0.1.0 with rc7 is 0.1.0_rc7, not 0.1.0-rc7 (mkpkg rejects the hyphen) and
 # not 0.1.0-rrc7.
 VERSION="$PKG_VERSION"
 if [ -n "$PKG_RELEASE" ]; then
 	case "$PKG_RELEASE" in
 		[0-9]*) VERSION="${PKG_VERSION}-r${PKG_RELEASE}" ;;
-		*) VERSION="${PKG_VERSION}-${PKG_RELEASE}" ;;
+		*) VERSION="${PKG_VERSION}_${PKG_RELEASE}" ;;
 	esac
 fi
 
