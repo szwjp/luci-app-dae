@@ -193,6 +193,47 @@ jobs:
           install -m0755 dae-extract/usr/bin/dae "dae/assets/${{ matrix.arch }}/dae"
           file "dae/assets/${{ matrix.arch }}/dae"
 
+      # The panel is architecture independent, so one leg fetches it. Its
+      # release lives in szwjp/doona; the archive and the digest pinned in
+      # doona/digests.txt are what the package is built from, so this
+      # repository's release carries the panel too.
+      - name: Fetch the panel
+        if: matrix.arch == 'x86_64'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$(awk '$1 == "tag" { print $2; exit }' doona/digests.txt)"
+          version="${tag#v}"
+          asset="doona-${version}.tar.gz"
+          expected="$(awk -v f="$asset" '$2 == f { print $1; exit }' doona/digests.txt)"
+          if [ -z "$expected" ]; then
+            echo "::error::doona/digests.txt has no sha256 for $asset"
+            exit 1
+          fi
+          api="https://api.github.com/repos/szwjp/doona/releases/tags/${tag}"
+          asset_id="$(curl -fsSL --connect-timeout 20 --retry 4 --retry-delay 3 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$api" | jq -r --arg n "$asset" '.assets[] | select(.name == $n) | .id' | head -n 1)"
+          if [ -z "$asset_id" ] || [ "$asset_id" = "null" ]; then
+            echo "::error::release ${tag} has no asset named $asset"
+            exit 1
+          fi
+          curl -fsSL --connect-timeout 20 --retry 4 --retry-delay 3 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" \
+            -o doona.tar.gz "https://api.github.com/repos/szwjp/doona/releases/assets/$asset_id"
+          actual="$(sha256sum doona.tar.gz | awk '{print $1}')"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::panel archive does not match doona/digests.txt: expected $expected, got $actual"
+            exit 1
+          fi
+          echo "panel archive sha256 matches doona/digests.txt: $actual"
+          # The package reads its asset tree from doona/assets/doona.
+          mkdir -p doona/assets/doona
+          tar -xzf doona.tar.gz -C doona/assets/doona
+          test -f doona/assets/doona/index.html
+          file doona/assets/index.html
+
       - name: Build packages
         run: |
           set -euo pipefail
@@ -205,6 +246,7 @@ jobs:
           # above.
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
             fakeroot bash .github/build-pkg.sh luci-app-dae
+            fakeroot bash .github/build-pkg.sh doona
           fi
           shopt -s nullglob
           apks=(out/*.apk)

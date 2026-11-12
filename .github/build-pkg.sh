@@ -73,7 +73,9 @@ get_mk_list() {
 # The dependency lists use the feed's "+pkg" form; apk wants plain names.
 DEPENDS_RAW="$(get_mk_value "PKG_DEPENDS")"
 [ -n "$DEPENDS_RAW" ] || DEPENDS_RAW="$(get_mk_value "LUCI_DEPENDS")"
-DEPENDS="$(echo "$DEPENDS_RAW" | tr ' ' '\n' | sed 's/^+//' | grep -v '^$' | tr '\n' ' ')"
+# A package without dependencies leaves the last grep with nothing to print,
+# which is exit status 1; it must not end the build under `set -e`.
+DEPENDS="$(echo "$DEPENDS_RAW" | tr ' ' '\n' | sed 's/^+//' | grep -v '^$' | tr '\n' ' ' || true)"
 
 # sha256sum is not everywhere; shasum is the macOS spelling of the same thing.
 sha256_of() {
@@ -174,11 +176,26 @@ if [ -n "$ASSETS" ]; then
 	done
 fi
 
-# The panel is a separate package now (doona, from szwjp/doona). A stale asset
-# tree would silently ship the old copy again, so the build refuses it.
+# The panel has its own package in this repository, built from doona's published
+# archive. A stale asset tree would silently ship the old copy again, so the
+# build refuses it, and the panel package refuses to be empty.
 if [ "$PKG_NAME" = "luci-app-dae" ] && [ -d "$STAGE/usr/share/dae/doona" ]; then
-	echo "error: luci-app-dae must not ship the doona panel; it belongs to the doona package" >&2
+	echo "error: the panel belongs to the doona package, not to luci-app-dae" >&2
 	exit 1
+fi
+if [ "$PKG_NAME" = "doona" ]; then
+	[ -f "$STAGE/usr/share/doona/index.html" ] || {
+		echo "error: doona assets/doona does not hold the built panel (index.html missing)" >&2
+		exit 1
+	}
+	# Only the frontend is served from /usr/share/doona. The licence texts and
+	# readme the archive carries with it belong in the documentation directory,
+	# the way the panel's own package installs them.
+	mkdir -p "$STAGE/usr/share/doc/doona"
+	for doc in LICENSE NOTICE THIRD-PARTY-NOTICES.txt README.md README.en.md README.zh-CN.md; do
+		[ -e "$STAGE/usr/share/doona/$doc" ] && mv "$STAGE/usr/share/doona/$doc" "$STAGE/usr/share/doc/doona/"
+	done
+	[ -d "$STAGE/usr/share/doona/LICENSES" ] && mv "$STAGE/usr/share/doona/LICENSES" "$STAGE/usr/share/doc/doona/"
 fi
 
 # dae refuses to read a configuration file that the group can write or that

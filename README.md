@@ -1,7 +1,8 @@
 # luci-app-dae
 
-dae 内核的 OpenWrt / ImmortalWrt 软件包与 LuCI 页面。面板（doona）由
-[szwjp/doona](https://github.com/szwjp/doona) 单独发布，本仓库不再携带面板字节。
+dae 内核的 OpenWrt / ImmortalWrt 软件包与 LuCI 页面。面板（doona）的源码在
+[szwjp/doona](https://github.com/szwjp/doona)，但**它的包在这里构建**：本仓库的发布从
+doona 的发布归档重新打包，三个包（引擎、面板、LuCI 页面）同一条发布、同一组版本。
 
 仓库产出四个包：
 
@@ -10,7 +11,7 @@ dae 内核的 OpenWrt / ImmortalWrt 软件包与 LuCI 页面。面板（doona）
 | `dae` | 守护进程，来自 [szwjp/dae](https://github.com/szwjp/dae) 的发布二进制（带 native HTTP 控制面），加上 OpenWrt 侧的 init/UCI/配置模板与手动 Geo 数据更新脚本。 |
 | `luci-app-dae` | LuCI 入口页与服务后端（rpcd）：状态、启停、API 密钥、打开面板、手动更新 Geo 数据。依赖 `dae` 与 `doona`。 |
 | `luci-i18n-dae-zh-cn` / `luci-i18n-dae-zh-tw` | LuCI 页面的简体 / 繁体中文翻译。 |
-| `doona`（+ `doona-fonts`） | 面板本体，**不在这里构建**，装 `szwjp/doona` 的发布包。 |
+| `doona` | 面板本体：把 szwjp/doona 发布的归档（摘要固定在 `doona/digests.txt`）装到 `/usr/share/doona`。字体归档不在本仓库打包。 |
 
 面板由 dae 自己托管：dae 把 `/usr/share/doona` 挂在 `/ui/`，API 仍要 Token。
 
@@ -28,21 +29,26 @@ apk --version   # 需要 apk-tools 3.x
 ### 下载并安装
 
 apk v3 的 `apk add` 只认本地文件，不接受 URL，所以先把包下载下来再装。
-`luci-app-dae` 依赖 `doona`，**三个文件要在同一条命令里**交给 apk：
+`luci-app-dae` 依赖 `doona`，**三个文件要在同一条命令里**交给 apk。三个包全部由本仓库
+的发布产出——面板由本仓库从 szwjp/doona 的发布归档重新打包（版本与摘要固定在
+`doona/digests.txt`），所以不需要再去另一个仓库挑版本：
 
 ```sh
 cd /tmp
-# 面板：按 szwjp/doona 最新 release 里的文件名下载
-wget -O doona.apk \
-  https://github.com/szwjp/doona/releases/download/v0.1.0-rc.8/doona-0.1.0_rc8-r1.apk
 # 引擎：按设备架构选一个
 wget -O dae.apk \
-  https://github.com/szwjp/luci-app-dae/releases/latest/download/dae-2.1.1-r8-x86_64.apk
+  https://github.com/szwjp/luci-app-dae/releases/latest/download/dae-2.1.1-r9-x86_64.apk
+# 面板
+wget -O doona.apk \
+  https://github.com/szwjp/luci-app-dae/releases/latest/download/doona-0.1.0-r9.apk
 # LuCI 页面
 wget -O luci-app-dae.apk \
-  https://github.com/szwjp/luci-app-dae/releases/latest/download/luci-app-dae-0.1.0-r8.apk
-apk add --allow-untrusted ./doona.apk ./dae.apk ./luci-app-dae.apk
+  https://github.com/szwjp/luci-app-dae/releases/latest/download/luci-app-dae-0.1.0-r9.apk
+apk add --allow-untrusted ./dae.apk ./doona.apk ./luci-app-dae.apk
 ```
+
+从旧版本升级时，`doona` 包会被同样包名的本仓库构建替换；面板文件仍装在
+`/usr/share/doona`，dae 的 `ui` 设置不用改。
 
 守护进程按架构分发：
 
@@ -55,11 +61,12 @@ apk add --allow-untrusted ./doona.apk ./dae.apk ./luci-app-dae.apk
 可选包：
 
 ```sh
-# 面板自带字体（Noto Sans TC/SC）；不装则回退系统字体
-apk add --allow-untrusted ./doona-fonts-<ver>.apk
 # LuCI 中文翻译，界面语言随浏览器 Accept-Language 走
 apk add --allow-untrusted ./luci-i18n-dae-zh-cn-<ver>.apk
 ```
+
+面板不带字体归档（Noto Sans TC/SC），缺少时回退系统字体。需要自带字体时，仍可从
+szwjp/doona 的发布里装 `doona-fonts-<ver>.apk`。
 
 ### 启用服务
 
@@ -241,10 +248,14 @@ install -m0755 usr/bin/dae dae/assets/x86_64/dae
 PKG_ASSET_DIR=assets/x86_64 PKG_ARCH_OVERRIDE=x86_64 \
   fakeroot bash .github/build-pkg.sh dae
 fakeroot bash .github/build-pkg.sh luci-app-dae
+fakeroot bash .github/build-pkg.sh doona   # 先取面板归档到 doona/assets
 ```
 
 需要 `apk` (apk-tools v3) 与 `po2lmo`（翻译包）；CI 里两者都编译好后使用。
-面板的构建与发布在 [szwjp/doona](https://github.com/szwjp/doona) 里，不在本仓库。
+
+面板从 [szwjp/doona](https://github.com/szwjp/doona) 的发布归档打包：`doona/digests.txt`
+固定发布 tag 与该归档的 sha256，CI 校验后解到 `doona/assets/`，再由 `build-pkg.sh doona`
+装到 `/usr/share/doona`。面板界面本身仍在上游仓库开发。
 
 包里的文件归 root。在 macOS 上本地打包时没有 fakeroot，`chown` 会失败，包会带上
 构建者的 uid（安装后显示为 nobody）；构建脚本会对此告警。正式出包走 CI（Linux +
