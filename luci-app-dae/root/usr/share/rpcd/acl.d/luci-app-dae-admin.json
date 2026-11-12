@@ -3,12 +3,12 @@
 		"description": "Grant control over the dae service",
 		"read": {
 			"ubus": {
-				"dae": [ "status", "secret" ]
+				"dae": [ "status", "secret", "geo_status" ]
 			}
 		},
 		"write": {
 			"ubus": {
-				"dae": [ "start", "stop", "restart", "enable", "disable", "set_listen", "set_api_write" ]
+				"dae": [ "start", "stop", "restart", "geo_update" ]
 			}
 		}
 	}

@@ -4,13 +4,6 @@ config dae 'main'
 	option api_listen '0.0.0.0:9527'
 	option api_secret ''
 	option api_write '0'
-	option ui_path '/usr/share/dae/doona'
 	# The LAN interface dae attaches to. Empty means the interface is taken
 	# from the dae configuration file (config.d/global.dae).
 	option lan_interface ''
-	# Weekly update of the geo data files (geoip.dat, geosite.dat) that the
-	# rules use. 0 takes the cron entry out, 1 puts it back.
-	option geo_update '1'
-	# When the update runs. The five fields are minute, hour, day of month,
-	# month, day of week. The default is Monday at two in the morning.
-	option geo_update_cron '0 2 * * 1'

@@ -25,6 +25,9 @@ STOP=10
 
 CONFIG=dae
 PROG=/usr/bin/dae
+# The panel is shipped by the doona package, which installs it here. dae serves
+# it from its own listener under /ui/.
+UI_PATH=/usr/share/doona
 API_FILE=/etc/dae/api.dae
 REDIRECTS_STATE=/var/run/dae-redirects.state
 
@@ -116,7 +119,7 @@ redirects_restore() {
 }
 
 start_service() {
-	local enabled config_file api_listen api_secret api_write ui_path device
+	local enabled config_file api_listen api_secret api_write device
 	config_load "$CONFIG"
 	config_get_bool enabled main enabled 0
 	if [ "$enabled" -ne "1" ]; then
@@ -131,9 +134,8 @@ start_service() {
 	config_get api_listen main api_listen "0.0.0.0:9527"
 	config_get api_secret main api_secret ""
 	config_get api_write main api_write "0"
-	config_get ui_path main ui_path "/usr/share/dae/doona"
 
-	write_api_section "$api_listen" "$api_secret" "$api_write" "$ui_path" || return 1
+	write_api_section "$api_listen" "$api_secret" "$api_write" || return 1
 
 	device="$(lan_interface)"
 	redirects_disable "$device"
@@ -267,16 +269,13 @@ valid_ui_path() {
 		''|/*) [ -n "$1" ] || return 1 ;;
 		*) return 1 ;;
 	esac
-	case "$1" in
-		*[!A-Za-z0-9/._-]*) return 1 ;;
-	esac
 	return 0
 }
 
 write_api_section() {
 	local listen secret write ui reason content
 
-	listen="$1"; secret="$2"; write="$3"; ui="$4"
+	listen="$1"; secret="$2"; write="$3"; ui="$UI_PATH"
 
 	listen="$(normalize_listen "$listen")"
 	if ! reason="$(check_listen "$listen")"; then
@@ -312,7 +311,7 @@ write_api_section() {
 		return 1
 	fi
 	if [ -n "$ui" ] && ! valid_ui_path "$ui"; then
-		logger -t dae "invalid ui_path '$ui' (absolute path, no quotes or spaces), refusing to start"
+		logger -t dae "invalid panel path '$ui' (absolute path expected), refusing to start"
 		return 1
 	fi
 

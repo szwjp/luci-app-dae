@@ -1,29 +1,64 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // The LuCI page of the dae engine. The doona panel drives dae over its native
-// HTTP API and is served by dae itself, so this page does not frame it: it
-// shows the state of the service, the address the panel lives at and the
-// secret the panel asks for, and it opens the panel in its own tab.
+// HTTP API and is served by dae itself from /usr/share/doona, so this page
+// does not frame it: it shows the state of the service, the address the panel
+// lives at and the secret the panel asks for, opens the panel in its own tab,
+// and drives the manual geo data update.
 
 'use strict';
 'require poll';
 'require view';
 'require view.dae.rpc as dae';
 
+function el(tag, className, children) {
+	return E(tag, className ? { 'class': className } : {}, children);
+}
+
+function button(label, className, onClick) {
+	const node = E('button', { 'class': className || 'cbi-button', 'type': 'button' }, label);
+	if (onClick)
+		node.addEventListener('click', onClick);
+	return node;
+}
+
+function note(text, hidden) {
+	const attrs = { 'class': 'dae-note' };
+	// E() turns every attribute into setAttribute, and "hidden=false" is still
+	// a hidden element: only add the attribute when it is wanted.
+	if (hidden)
+		attrs.hidden = '';
+	return E('p', attrs, text);
+}
+
 function metaItem(label, value) {
-	return E('span', { 'class': 'dae-meta-item' }, [
-		E('span', { 'class': 'dae-meta-label' }, label),
+	return el('span', 'dae-meta-item', [
+		el('span', 'dae-meta-label', label),
 		value && value.nodeType
 			? value
 			: (value == null || value === '' ? '—' : String(value))
 	]);
 }
 
-function field(label, value) {
-	return E('div', { 'class': 'cbi-value' }, [
-		E('label', { 'class': 'cbi-value-title' }, label),
-		E('div', { 'class': 'cbi-value-field' }, value)
-	]);
+function formatBytes(bytes) {
+	const value = Number(bytes);
+	if (!value)
+		return '—';
+
+	const units = [ 'B', 'KB', 'MB', 'GB' ];
+	let index = 0;
+	let size = value;
+	while (size >= 1024 && index < units.length - 1) {
+		size = size / 1024;
+		index++;
+	}
+
+	return (index === 0 ? String(size) : size.toFixed(1)) + ' ' + units[index];
+}
+
+function formatTime(seconds) {
+	const value = Number(seconds);
+	return value ? new Date(value * 1000).toLocaleString() : '—';
 }
 
 return view.extend({
@@ -32,8 +67,11 @@ return view.extend({
 	handleReset: null,
 
 	load: function() {
-		return dae.status().then(function(status) {
-			return { status: status };
+		return Promise.all([
+			dae.status(),
+			dae.geoStatus().catch(function() { return null; })
+		]).then(function(results) {
+			return { status: results[0], geo: results[1] };
 		}).catch(function(error) {
 			return { error: error.message || String(error) };
 		});
@@ -43,304 +81,262 @@ return view.extend({
 		dae.installStyles();
 
 		const page = E('div', { 'class': 'cbi-map dae-page' });
-		const statusArea = E('div');
-		const actionMessage = E('p', { 'class': 'dae-status-msg', 'role': 'status' }, '');
-		let currentStatus = data.status;
-		let busy = false;
+		const message = el('p', 'dae-status-msg', '');
+		message.setAttribute('role', 'status');
 
-		// The listener address is edited in place. The page polls every few
-		// seconds, so the edit that is not applied yet is kept aside: the
-		// poll must not wipe it.
-		let listenerDraft = null;
-		let listenerEditor = null;
-
-		/*
-		 * The page is built once and then updated in place. A poll that
-		 * rebuilds the whole area every few seconds takes the elements away
-		 * from under a click, and a switch or a button that silently does
-		 * nothing is worse than one that answers a moment late.
-		 */
 		const ui = {};
+		const statusCard = el('section', 'dae-card');
+		const secretCard = el('section', 'dae-card');
+		const geoCard = el('section', 'dae-card');
+		let statusData = data.status || null;
+		let geoData = data.geo || null;
+		let busy = false;
+		let geoBusy = false;
 
-		function build() {
-			ui.errorAlert = E('div', { 'class': 'alert-message' },
-				_('Could not read the dae service state.'));
-			ui.errorNote = E('p', { 'class': 'dae-note' },
-				_('If luci-app-dae was installed just now, restart rpcd so that its backend is registered.'));
+		// The tabs are two panes of one view rather than two menu entries: the
+		// geo update belongs to the same service as the panel link.
+		const tabService = button(_('Service'), 'dae-tab dae-tab--active');
+		const tabGeo = button(_('Geo data'), 'dae-tab');
+		const paneService = E('div', { 'class': 'dae-pane', 'role': 'tabpanel' });
+		const paneGeo = E('div', { 'class': 'dae-pane', 'role': 'tabpanel', 'hidden': true });
 
-			ui.badge = E('span', { 'class': 'dae-badge dae-badge--stop' }, _('Disabled'));
+		function selectTab(name) {
+			const geo = name === 'geo';
 
-			ui.openPanel = E('a', {
-				'class': 'cbi-button cbi-button-action',
-				'href': null,
-				'target': '_blank',
-				'rel': 'noopener noreferrer'
-			}, _('Open panel'));
+			tabService.classList.toggle('dae-tab--active', !geo);
+			tabGeo.classList.toggle('dae-tab--active', geo);
+			tabService.setAttribute('aria-selected', String(!geo));
+			tabGeo.setAttribute('aria-selected', String(geo));
+			paneService.hidden = geo;
+			paneGeo.hidden = !geo;
 
-			ui.toggle = E('button', {
-				'class': 'cbi-button cbi-button-action',
-				'type': 'button',
-				'data-action': 'start'
-			}, _('Start'));
-			ui.toggle.addEventListener('click', function() {
-				runAction(ui.toggle.getAttribute('data-action'));
-			});
-
-			ui.restart = E('button', {
-				'class': 'cbi-button',
-				'type': 'button',
-				'data-action': 'restart'
-			}, _('Restart'));
-			ui.restart.addEventListener('click', function() {
-				runAction('restart');
-			});
-
-			ui.statusCard = E('section', { 'class': 'dae-card' }, [
-				E('div', { 'class': 'dae-card-head' }, [
-					E('div', {}, [
-						E('h3', { 'class': 'dae-card-title' }, _('Status')),
-						ui.badge
-					]),
-					E('div', { 'class': 'dae-actions' }, [ ui.openPanel, ui.toggle, ui.restart ])
-				]),
-				E('div', { 'class': 'dae-meta' }, [
-					metaItem(_('Listener'), listenerEditorNode())
-				])
-			]);
-
-			ui.reason = E('p', { 'class': 'dae-note', 'role': 'status' }, '');
-			ui.errors = E('ul', { 'class': 'alert-message' });
-			ui.statusCard.appendChild(ui.reason);
-			ui.statusCard.appendChild(ui.errors);
-
-			ui.boot = E('input', { 'type': 'checkbox', 'name': 'boot_enabled', 'id': 'dae-boot-enabled' });
-			ui.boot.addEventListener('change', function() {
-				runAction(ui.boot.checked ? 'enable' : 'disable');
-			});
-
-			// The permission to write the configuration files is read by the
-			// daemon when it starts, so the switch reaches the core through
-			// a restart of the service.
-			ui.apiWrite = E('input', { 'type': 'checkbox', 'name': 'api_write', 'id': 'dae-api-write' });
-			ui.apiWrite.addEventListener('change', function() {
-				setApiWrite(ui.apiWrite.checked);
-			});
-
-			ui.serviceCard = E('section', { 'class': 'dae-card' }, [
-				E('h3', { 'class': 'dae-card-title' }, _('Service')),
-				field(_('Start at boot'), ui.boot),
-				field(_('Configuration write'), ui.apiWrite),
-				E('p', { 'class': 'dae-note' },
-					_('Configuration write lets the panel save changes to the dae configuration files.'))
-			]);
-
-			ui.secretValue = E('code', { 'class': 'dae-secret' }, _('Loading…'));
-			ui.secretShow = E('button', { 'class': 'cbi-button', 'type': 'button' }, _('Show'));
-			ui.secretCopy = E('button', { 'class': 'cbi-button', 'type': 'button', 'disabled': true }, _('Copy'));
-			ui.secretCard = E('section', { 'class': 'dae-card' }, [
-				E('h3', { 'class': 'dae-card-title' }, _('API secret')),
-				E('div', { 'class': 'dae-secret-row' }, [ ui.secretValue, ui.secretShow, ui.secretCopy ]),
-				E('p', { 'class': 'dae-note' },
-					_('The panel asks for this secret the first time it is opened. It is also readable with: uci get dae.main.api_secret'))
-			]);
-
-			statusArea.appendChild(ui.errorAlert);
-			statusArea.appendChild(ui.errorNote);
-			statusArea.appendChild(ui.statusCard);
-			statusArea.appendChild(ui.serviceCard);
-			statusArea.appendChild(ui.secretCard);
+			if (geo)
+				refreshGeo();
 		}
 
-		/*
-		 * The listener address is edited in place: an address field and a
-		 * port field, and a button that saves them. The editor is built
-		 * once and kept, so a poll does not take the focus away from the
-		 * field that is being typed in.
-		 */
-		function listenerEditorNode() {
-			if (!listenerEditor)
-				createListenerEditor();
+		tabService.addEventListener('click', function() { selectTab('service'); });
+		tabGeo.addEventListener('click', function() { selectTab('geo'); });
 
-			return listenerEditor.node;
-		}
+		// ---- service tab ----------------------------------------------------
 
-		function createListenerEditor() {
-			const address = E('input', { 'class': 'dae-listen-input', 'type': 'text', 'placeholder': '0.0.0.0' });
-			const port = E('input', { 'class': 'dae-listen-input dae-listen-port', 'type': 'number', 'min': '1', 'max': '65535' });
-			const apply = E('button', { 'class': 'cbi-button cbi-button-action', 'type': 'button' }, _('Apply'));
+		ui.badge = el('span', 'dae-badge dae-badge--stop', _('Disabled'));
+		ui.openPanel = E('a', {
+			'class': 'cbi-button cbi-button-action',
+			'target': '_blank',
+			'rel': 'noopener noreferrer'
+		}, _('Open panel'));
+		ui.toggle = button(_('Start'), 'cbi-button cbi-button-action', function() {
+			runAction(ui.toggle.getAttribute('data-action'));
+		});
+		ui.toggle.setAttribute('data-action', 'start');
+		ui.restart = button(_('Restart'), 'cbi-button', function() { runAction('restart'); });
+		ui.listen = el('span', '', '—');
+		ui.reason = note('');
 
-			const remember = function() {
-				listenerDraft = { address: address.value.trim(), port: port.value.trim() };
-			};
-			address.addEventListener('input', remember);
-			port.addEventListener('input', remember);
+		statusCard.appendChild(el('div', 'dae-card-head', [
+			el('div', 'dae-card-head-main', [
+				el('h3', 'dae-card-title', _('Status')),
+				ui.badge
+			]),
+			el('div', 'dae-actions', [ ui.openPanel, ui.toggle, ui.restart ])
+		]));
+		statusCard.appendChild(el('div', 'dae-meta', [ metaItem(_('Listener'), ui.listen) ]));
+		statusCard.appendChild(ui.reason);
 
-			apply.addEventListener('click', function() {
-				const addressValue = address.value.trim();
-				const portValue = parseInt(port.value, 10);
+		ui.secretValue = el('code', 'dae-secret', _('Loading…'));
+		ui.secretShow = button(_('Show'), 'cbi-button');
+		ui.secretCopy = button(_('Copy'), 'cbi-button');
+		ui.secretCopy.disabled = true;
 
-				if (!addressValue || !Number.isInteger(portValue) || portValue < 1 || portValue > 65535) {
-					actionMessage.textContent = _('The listener address is invalid. Use a numeric address and a port between 1 and 65535.');
-					return;
-				}
+		secretCard.appendChild(el('h3', 'dae-card-title', _('API secret')));
+		secretCard.appendChild(el('div', 'dae-secret-row', [
+			ui.secretValue, ui.secretShow, ui.secretCopy
+		]));
+		secretCard.appendChild(note(
+			_('The panel asks for this secret the first time it is opened. It is also readable with: uci get dae.main.api_secret')));
 
-				// The value is on its way to the backend now. Dropping the
-				// draft lets the next status poll put the stored address back
-				// into the fields, whether the backend kept it or reverted it.
-				listenerDraft = null;
-				runAction('set_listen', [ addressValue, portValue ]);
-			});
+		ui.errorAlert = el('div', 'alert-message', _('Could not read the dae service state.'));
+		ui.errorAlert.hidden = true;
+		ui.errorNote = note(_('If luci-app-dae was installed just now, restart rpcd so that its backend is registered.'), true);
 
-			listenerEditor = {
-				node: E('span', { 'class': 'dae-listen-editor' }, [
-					address,
-					E('span', { 'class': 'dae-listen-sep' }, ':'),
-					port,
-					apply
-				]),
-				address: address,
-				port: port,
-				apply: apply
+		paneService.appendChild(ui.errorAlert);
+		paneService.appendChild(ui.errorNote);
+		paneService.appendChild(statusCard);
+		paneService.appendChild(secretCard);
+
+		// ---- geo tab --------------------------------------------------------
+
+		function geoRow(name) {
+			const size = el('td', '', '—');
+			const modified = el('td', '', '—');
+			return {
+				row: el('tr', '', [ el('td', '', name), size, modified ]),
+				size: size,
+				modified: modified
 			};
 		}
 
-		function syncListenerEditor(status) {
-			if (!listenerEditor)
-				return;
+		ui.geoRows = [ geoRow('geoip.dat'), geoRow('geosite.dat') ];
+		ui.geoLast = note(_('Never updated.'));
+		ui.geoLog = E('pre', { 'class': 'dae-log' }, '');
+		ui.geoError = el('div', 'alert-message', _('Could not read the geo data state.'));
+		ui.geoError.hidden = true;
+		ui.geoUpdate = button(_('Update now'), 'cbi-button cbi-button-action', runGeoUpdate);
 
-			const parts = dae.splitListen(status.listen);
-			const active = document.activeElement;
+		geoCard.appendChild(el('div', 'dae-card-head', [
+			el('div', 'dae-card-head-main', [ el('h3', 'dae-card-title', _('Geo data')) ]),
+			el('div', 'dae-actions', [ ui.geoUpdate ])
+		]));
+		geoCard.appendChild(note(
+			_('The geoip.dat and geosite.dat files back the geoip: and geosite: rules. dae reads them when it starts, so it is restarted after an update.')));
+		geoCard.appendChild(E('table', { 'class': 'dae-geo-table' }, [
+			E('thead', {}, E('tr', {}, [
+				el('th', '', _('File')), el('th', '', _('Size')), el('th', '', _('Modified'))
+			])),
+			el('tbody', '', ui.geoRows.map(function(row) { return row.row; }))
+		]));
+		geoCard.appendChild(ui.geoLast);
+		geoCard.appendChild(ui.geoLog);
 
-			// A draft is only worth holding while the fields differ from the
-			// value the backend reports. Once they agree there is nothing left
-			// to protect, and keeping the flag set would freeze the editor for
-			// the rest of the session: a change made elsewhere would never
-			// reach these fields again.
-			if (listenerDraft &&
-				listenerDraft.address === parts.address &&
-				listenerDraft.port === parts.port)
-				listenerDraft = null;
+		paneGeo.appendChild(ui.geoError);
+		paneGeo.appendChild(geoCard);
 
-			if (!listenerDraft && active !== listenerEditor.address && active !== listenerEditor.port) {
-				if (listenerEditor.address.value !== parts.address)
-					listenerEditor.address.value = parts.address;
-				if (listenerEditor.port.value !== parts.port)
-					listenerEditor.port.value = parts.port;
-			}
+		// ---- rendering ------------------------------------------------------
 
-			listenerEditor.apply.disabled = busy;
-		}
-
-		function update(status, error) {
-			// A reply without the expected fields is a backend that did not
-			// answer, not a service that is switched off: showing it as
-			// "disabled" would hide the real problem.
-			const unreadable = !!error || !status || typeof status !== 'object' || typeof status.listen !== 'string';
+		function updateStatus(status, error) {
+			const unreadable = !!error || !status || typeof status !== 'object' ||
+				typeof status.listen !== 'string';
 
 			ui.errorAlert.hidden = !unreadable;
 			ui.errorNote.hidden = !unreadable;
-			ui.statusCard.hidden = unreadable;
-			ui.serviceCard.hidden = unreadable;
+			statusCard.hidden = unreadable;
+			secretCard.hidden = unreadable;
 
 			if (unreadable)
 				return;
 
-			currentStatus = status;
+			statusData = status;
 
 			const running = status.running === true;
 			const enabled = status.enabled === true;
 
-			ui.badge.className = 'dae-badge %s'.format(running ? 'dae-badge--run' : (enabled ? 'dae-badge--idle' : 'dae-badge--stop'));
+			ui.badge.className = 'dae-badge ' + (running
+				? 'dae-badge--run'
+				: (enabled ? 'dae-badge--idle' : 'dae-badge--stop'));
 			ui.badge.textContent = running ? _('Running') : (enabled ? _('Stopped') : _('Disabled'));
+			ui.listen.textContent = status.listen || '—';
 
 			const url = dae.panelUrl(status);
 			if (url) {
 				ui.openPanel.setAttribute('href', url);
 				ui.openPanel.setAttribute('target', '_blank');
 				ui.openPanel.setAttribute('rel', 'noopener noreferrer');
-			} else {
+			}
+			else {
 				ui.openPanel.removeAttribute('href');
 			}
 
 			ui.toggle.textContent = running ? _('Stop') : _('Start');
 			ui.toggle.setAttribute('data-action', running ? 'stop' : 'start');
 			// Starting is what turns a disabled service on: the backend sets
-			// enabled=1 before it starts the daemon, so a fresh install is
-			// started from this very button. Only a stop waits for the switch
-			// to be on, because stopping a service that is already off is
-			// pointless rather than impossible.
+			// enabled=1 and creates the boot links before it starts the daemon.
 			ui.toggle.disabled = busy || (running && !enabled);
 			ui.restart.disabled = busy || !running;
 			ui.restart.hidden = !running;
 
-			// Why the panel cannot be opened, when it cannot be opened.
-			let reason = '';
-			if (!url) {
-				if (!enabled)
-					// The start button turns the service on, so the note says
-					// what to do instead of only what is wrong.
-					reason = _('The dae service is not enabled yet. Press Start to enable and start it.');
-				else if (!running)
-					reason = _('The dae service is stopped. Press Start to run it.');
-				else if (status.panel_available === false)
-					reason = _('The panel files are missing. Reinstall the luci-app-dae package.');
-				else
-					reason = _('The panel is not reachable from this browser.');
-			}
+			const reason = dae.panelReason(status) || '';
 			ui.reason.textContent = reason;
 			ui.reason.hidden = !reason;
-
-			const errors = (Array.isArray(status.errors) ? status.errors : [])
-				.filter(function(token) { return token !== 'disabled'; })
-				// The secret is generated by the first successful start, and
-				// the start button now does that. Reporting it as a problem
-				// before the service was ever enabled only confuses the page.
-				.filter(function(token) { return !(token === 'secret_missing' && !enabled); });
-			while (ui.errors.firstChild)
-				ui.errors.removeChild(ui.errors.firstChild);
-			errors.forEach(function(token) {
-				ui.errors.appendChild(E('li', {}, dae.statusIssue(token)));
-			});
-			ui.errors.hidden = !errors.length;
-
-			// While an operation is running the switches keep the state the
-			// user gave them: the status is older than the click.
-			if (!busy) {
-				ui.boot.checked = status.boot_enabled === true;
-				ui.apiWrite.checked = status.api_write === true;
-			}
-			ui.boot.disabled = busy;
-			ui.apiWrite.disabled = busy;
-
-			syncListenerEditor(status);
 		}
 
-		function runAction(action, args) {
+		function updateGeo(geo) {
+			geoData = geo || null;
+
+			if (!geo) {
+				ui.geoError.hidden = false;
+				geoCard.hidden = true;
+				return;
+			}
+
+			ui.geoError.hidden = true;
+			geoCard.hidden = false;
+
+			const files = Array.isArray(geo.files) ? geo.files : [];
+			ui.geoRows.forEach(function(row, index) {
+				const file = files[index] || {};
+
+				if (file.present) {
+					row.size.textContent = formatBytes(file.size);
+					row.modified.textContent = formatTime(file.modified);
+				}
+				else {
+					row.size.textContent = _('Not installed');
+					row.modified.textContent = '—';
+				}
+			});
+
+			const state = geo.state || 'idle';
+			if (state === 'running') {
+				ui.geoLast.textContent = _('Updating…');
+			}
+			else if (state === 'ok' || state === 'failed') {
+				const text = geo.message
+					? dae.statusIssue(geo.message)
+					: (state === 'ok' ? _('The update completed.') : _('The update failed.'));
+				ui.geoLast.textContent = (geo.finished ? formatTime(geo.finished) + ' · ' : '') + text;
+			}
+			else {
+				ui.geoLast.textContent = _('Never updated.');
+			}
+
+			ui.geoUpdate.disabled = geoBusy || state === 'running';
+			ui.geoUpdate.textContent = state === 'running' ? _('Updating…') : _('Update now');
+
+			const log = Array.isArray(geo.log) ? geo.log.join('\n') : (geo.log || '');
+			ui.geoLog.textContent = log;
+			ui.geoLog.hidden = !log;
+		}
+
+		// ---- actions --------------------------------------------------------
+
+		function runAction(action) {
 			if (busy)
 				return;
 
 			busy = true;
-			actionMessage.textContent = _('Working…');
-			update(currentStatus, null);
+			message.textContent = _('Working…');
+			updateStatus(statusData, null);
 
-			const call = args ? dae[action].apply(null, args) : dae[action]();
-
-			call.then(dae.ensureOk).then(function(result) {
-				actionMessage.textContent = dae.resultMessage(result, _('The operation completed.'));
+			dae[action]().then(dae.ensureOk).then(function(result) {
+				message.textContent = dae.resultMessage(result, _('The operation completed.'));
 			}).catch(function(error) {
-				actionMessage.textContent = dae.errorMessage(error, _('The operation failed.'));
+				message.textContent = dae.errorMessage(error, _('The operation failed.'));
 			}).finally(function() {
 				busy = false;
-				refresh();
+				refreshStatus();
 			});
 		}
 
-		function setApiWrite(value) {
-			runAction('set_api_write', [ value ]);
+		function runGeoUpdate() {
+			if (geoBusy)
+				return;
+
+			geoBusy = true;
+			message.textContent = _('Working…');
+			updateGeo(geoData);
+
+			dae.geoUpdate().then(dae.ensureOk).then(function(result) {
+				message.textContent = dae.resultMessage(result, _('The update was started.'));
+			}).catch(function(error) {
+				message.textContent = dae.errorMessage(error, _('The operation failed.'));
+			}).finally(function() {
+				geoBusy = false;
+				refreshGeo();
+			});
 		}
 
 		function loadSecret() {
-			let secretShown = false;
+			let shown = false;
 
 			dae.secret().then(function(result) {
 				const secret = result && result.secret;
@@ -357,9 +353,9 @@ return view.extend({
 				ui.secretCopy.disabled = false;
 
 				ui.secretShow.onclick = function() {
-					secretShown = !secretShown;
-					ui.secretValue.textContent = secretShown ? secret : '••••••••••••';
-					ui.secretShow.textContent = secretShown ? _('Hide') : _('Show');
+					shown = !shown;
+					ui.secretValue.textContent = shown ? secret : '••••••••••••';
+					ui.secretShow.textContent = shown ? _('Hide') : _('Show');
 				};
 
 				ui.secretCopy.onclick = function() {
@@ -373,15 +369,15 @@ return view.extend({
 						}, 3000);
 					};
 
-					// The clipboard can be out of reach: a browser that is
-					// not allowed to use it refuses the write. The secret is
-					// shown then, so it can still be taken over by hand.
+					// The clipboard can be out of reach: a browser that is not
+					// allowed to use it refuses the write. The secret is shown
+					// then, so it can still be taken over by hand.
 					const failed = function() {
-						secretShown = true;
+						shown = true;
 						ui.secretValue.textContent = secret;
 						ui.secretShow.textContent = _('Hide');
 						ui.secretCopy.disabled = false;
-						actionMessage.textContent = _('The secret could not be written to the clipboard. It is shown instead.');
+						message.textContent = _('The secret could not be written to the clipboard. It is shown instead.');
 					};
 
 					if (navigator.clipboard && navigator.clipboard.writeText)
@@ -396,32 +392,48 @@ return view.extend({
 			});
 		}
 
-		function refresh() {
-			if (busy)
-				return Promise.resolve();
-
+		function refreshStatus() {
 			return dae.status().then(function(status) {
-				update(status, null);
+				updateStatus(status, null);
 			}).catch(function() {
-				update(null, true);
+				updateStatus(null, true);
 			});
 		}
 
-		page.appendChild(E('div', { 'class': 'dae-header' }, [
-			E('h2', {}, _('dae')),
-			E('p', { 'class': 'dae-header-sub' },
-				_('The doona panel drives the dae engine over its native HTTP API. dae serves the panel itself; this page shows the service state and opens the panel.'))
-		]));
-		page.appendChild(statusArea);
-		page.appendChild(actionMessage);
+		function refreshGeo() {
+			return dae.geoStatus().then(function(geo) {
+				updateGeo(geo);
+			}).catch(function() {
+				updateGeo(null);
+			});
+		}
 
-		build();
-		update(data.status, data.error);
+		// ---- assemble -------------------------------------------------------
+
+		page.appendChild(el('div', 'dae-header', [
+			el('h2', '', _('dae')),
+			el('p', 'dae-header-sub',
+				_('The doona panel drives the dae engine over its native HTTP API. dae serves the panel itself; this page shows the service state, opens the panel and updates the geo data.'))
+		]));
+		page.appendChild(E('div', { 'class': 'dae-tabs', 'role': 'tablist' }, [ tabService, tabGeo ]));
+		page.appendChild(paneService);
+		page.appendChild(paneGeo);
+		page.appendChild(message);
+
+		updateStatus(data.status || null, data.error || null);
+		updateGeo(data.geo || null);
 		loadSecret();
-		// A hidden tab keeps polling, and every poll is a status RPC. The
-		// page catches up on the first tick after it is visible again.
+
+		// A hidden tab keeps polling, and every poll is an RPC call. The page
+		// catches up on the first tick after it is visible again.
 		poll.add(function() {
-			return document.hidden ? Promise.resolve() : refresh();
+			if (document.hidden)
+				return Promise.resolve();
+
+			const tasks = [ refreshStatus() ];
+			if (!paneGeo.hidden || (geoData && geoData.state === 'running'))
+				tasks.push(refreshGeo());
+			return Promise.all(tasks);
 		}, 5);
 
 		return page;

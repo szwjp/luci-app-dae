@@ -162,15 +162,23 @@ if [ -n "$ASSETS" ]; then
 		[ -e "$PKG_DIR/$src" ] || { echo "error: asset $src missing in $PKG_DIR" >&2; exit 1; }
 		mkdir -p "$STAGE/$(dirname "$dst")"
 		cp -a "$PKG_DIR/$src" "$STAGE/$dst"
-		# Vite keeps build metadata next to the assets: module maps and the
-		# absolute paths of the build host. It is of no use at runtime, and
-		# shipping it would publish the builder's home directory.
-		rm -rf "$STAGE/$dst/.vite"
 	done
+fi
+
+# The panel is a separate package now (doona, from szwjp/doona). A stale asset
+# tree would silently ship the old copy again, so the build refuses it.
+if [ "$PKG_NAME" = "luci-app-dae" ] && [ -d "$STAGE/usr/share/dae/doona" ]; then
+	echo "error: luci-app-dae must not ship the doona panel; it belongs to the doona package" >&2
+	exit 1
 fi
 
 # dae refuses to read a configuration file that the group can write or that
 # others can read, and the init script has to stay executable.
+# macOS stores extended attributes as AppleDouble "._*" files next to the real
+# ones; a package built on a Mac would ship them (tar and cp both carry them).
+# They are not part of any package.
+find "$STAGE" -name '._*' -type f -delete 2>/dev/null || true
+
 find "$STAGE/etc/init.d" -type f -exec chmod 0755 {} + 2>/dev/null || true
 find "$STAGE/etc/dae" -type f -exec chmod 0600 {} + 2>/dev/null || true
 find "$STAGE/etc/config" -type f -exec chmod 0600 {} + 2>/dev/null || true
@@ -225,6 +233,12 @@ cat > "$TEMP_DIR/post-install" <<-EOF
 		# without a proxy until somebody notices.
 		if [ -x /etc/init.d/dae ] && [ "\$(uci -q get dae.main.enabled)" = "1" ]; then
 			/etc/init.d/dae enable 2>/dev/null
+		fi
+		# The panel used to be part of luci-app-dae and lived here. It is
+		# the doona package's file tree now; drop the copy this machine
+		# still carries from the older package.
+		if [ "\$pkgname" = "luci-app-dae" ] && [ -d /usr/share/dae/doona ]; then
+			rm -rf /usr/share/dae/doona
 		fi
 		exit 0
 	}

@@ -15,22 +15,8 @@ const callSecret = rpc.declare({ object: 'dae', method: 'secret', expect: { '': 
 const callStart = rpc.declare({ object: 'dae', method: 'start', expect: { '': {} }, reject: true });
 const callStop = rpc.declare({ object: 'dae', method: 'stop', expect: { '': {} }, reject: true });
 const callRestart = rpc.declare({ object: 'dae', method: 'restart', expect: { '': {} }, reject: true });
-const callEnable = rpc.declare({ object: 'dae', method: 'enable', expect: { '': {} }, reject: true });
-const callDisable = rpc.declare({ object: 'dae', method: 'disable', expect: { '': {} }, reject: true });
-const callSetListen = rpc.declare({
-	object: 'dae',
-	method: 'set_listen',
-	params: [ 'address', 'port' ],
-	expect: { '': {} },
-	reject: true
-});
-const callSetApiWrite = rpc.declare({
-	object: 'dae',
-	method: 'set_api_write',
-	params: [ 'value' ],
-	expect: { '': {} },
-	reject: true
-});
+const callGeoStatus = rpc.declare({ object: 'dae', method: 'geo_status', expect: { '': {} }, reject: true });
+const callGeoUpdate = rpc.declare({ object: 'dae', method: 'geo_update', expect: { '': {} }, reject: true });
 
 let pageStylesInstalled = false;
 
@@ -38,9 +24,10 @@ let pageStylesInstalled = false;
  * The browser keeps a stylesheet in its cache, so a page that is opened
  * after the package was upgraded would still use the stylesheet of the
  * older version. The version on the URL makes it fetch the current one.
- * It has to be raised whenever dae.css changes.
+ * It has to be raised whenever dae.css changes; the package build stamps
+ * the package version in.
  */
-const STYLE_VERSION = '20261102';
+const STYLE_VERSION = '20261112';
 
 function installStyles() {
 	if (pageStylesInstalled || document.getElementById('dae-page-styles'))
@@ -102,25 +89,6 @@ function listenHost(listen) {
 }
 
 /*
- * The listener address as the two parts the page edits: the host and the
- * port. The brackets of an IPv6 literal are dropped, because the field that
- * holds the address takes the bare address and the backend adds the brackets
- * back.
- */
-function splitListen(listen) {
-	const value = String(listen || '');
-	const cut = value.lastIndexOf(':');
-
-	if (cut < 0)
-		return { address: value, port: '' };
-
-	return {
-		address: value.slice(0, cut).replace(/^\[|\]$/g, ''),
-		port: value.slice(cut + 1)
-	};
-}
-
-/*
  * The address the panel is reached at.
  *
  * dae serves the panel from its API listener, so the page has to name the
@@ -135,15 +103,9 @@ function splitListen(listen) {
  *
  * The API checks the Host header: with a wildcard bind it accepts an IP
  * literal or "localhost" only, so a router that was reached by name cannot use
- * the browser's own host.
- *
- * Which address that leaves is not something the backend can know: a router
- * with an uplink and a LAN has an address on each, and only the browser knows
- * which one it can reach. The backend therefore reports a list of candidates
- * and the page takes the first one that belongs to the network the browser is
- * already talking to. Guessing with the LAN address is what made the button
- * point at 192.168.2.1 for a browser that had reached the router at
- * 192.168.1.140.
+ * the browser's own host. The backend reports a list of candidates then, and
+ * the first one that belongs to the network the browser is already talking to
+ * is the one to take.
  */
 function panelUrl(status) {
 	if (!status || !status.running || !status.panel_available)
@@ -176,14 +138,35 @@ function panelUrl(status) {
 	return 'http://' + authorityHost(host) + ':' + port + '/ui/';
 }
 
+/*
+ * Why the panel cannot be opened, or null when it can. The wording tells the
+ * operator what to do, not only what is wrong.
+ */
+function panelReason(status) {
+	if (!status || typeof status !== 'object')
+		return null;
+	if (!status.running) {
+		return status.enabled
+			? _('The dae service is stopped. Press Start to run it.')
+			: _('The dae service is not enabled yet. Press Start to enable and start it.');
+	}
+	if (!status.panel_available)
+		return _('The panel is not installed. Install the doona package.');
+	if (!panelUrl(status)) {
+		if (isLoopback(listenHost(status.listen)))
+			return _('The API listens on the router itself, so the panel is not reachable from another machine.');
+		return _('The panel is not reachable from this browser.');
+	}
+	return null;
+}
+
 // The first reported address that is close enough to the browser to be worth
 // trying, or the first reported address when none is.
 //
 // "Close enough" means the same /24: a router answers on several networks, and
-// the one the browser sits in is the one it can always reach. Without a list,
-// from an older backend, the single lan_address is used as before.
+// the one the browser sits in is the one it can always reach.
 function pickReachableAddress(status, browserHost) {
-	const candidates = Array.isArray(status.lan_addresses) && status.lan_addresses.length
+	const candidates = Array.isArray(status.lan_addresses)
 		? status.lan_addresses.filter(isIpLiteral)
 		: [];
 	if (!candidates.length && status.lan_address)
@@ -212,37 +195,24 @@ function pickReachableAddress(status, browserHost) {
 
 function statusIssue(token) {
 	const messages = {
-		disabled: _('The dae service is disabled.'),
-		service_not_running: _('The dae service is enabled but not running.'),
-		// The secret is created by the first start, but only a start that the
-		// init script is allowed to perform: a disabled service is not started
-		// at all, so "restart the service" was advice that did nothing on a
-		// fresh install. The page only ever shows this after the service was
-		// enabled, where starting it really does generate the secret.
-		secret_missing: _('The API secret is missing. Restart the service to generate one.'),
-		panel_missing: _('The panel files are missing. Reinstall the luci-app-dae package.'),
-		loopback_listener: _('The API listens on the router itself, so the panel is not reachable from another machine.'),
-		invalid_listener: _('The API listener address is invalid. Check dae.main.api_listen.'),
 		started: _('The dae service started.'),
 		stopped: _('The dae service stopped.'),
 		restarted: _('The dae service restarted.'),
-		enabled: _('The dae service starts at boot.'),
-		disabled_action: _('The dae service no longer starts at boot.'),
 		start_failed: _('The dae service did not start. Check the system log.'),
 		stop_failed: _('The dae service did not stop. Check the system log.'),
 		restart_failed: _('The dae service did not restart. Check the system log.'),
-		enable_failed: _('The dae service was not enabled. Check the system log.'),
-		listener_applied: _('The listener address was saved and the service was restarted.'),
-		listener_saved: _('The listener address was saved. It takes effect at the next start.'),
-		listener_invalid: _('The listener address is invalid. Use a numeric address and a port between 1 and 65535.'),
-		listener_reverted: _('The listener address was not accepted: the service did not come up with it, so the previous address was restored.'),
-		api_write_applied: _('The configuration write permission was saved and the service was restarted.'),
-		api_write_saved: _('The configuration write permission was saved. It takes effect at the next start.'),
-		api_write_reverted: _('The configuration write permission was not accepted: the service did not come up with it, so the previous setting was restored.'),
-		invalid_value: _('The value is not valid.'),
-		invalid_request: _('The request was not understood.'),
 		settings_write_failed: _('The settings could not be written. Check the system log.'),
-		invalid_operation: _('The operation is not known.')
+		invalid_operation: _('The operation is not known.'),
+		geo_started: _('The update was started.'),
+		geo_busy: _('Another update is already running.'),
+		geo_unavailable: _('The update script is missing. Reinstall the dae package.'),
+		updated: _('The geo data was updated and dae was restarted.'),
+		up_to_date: _('The geo data is already up to date.'),
+		updated_stopped: _('The geo data was updated. It takes effect the next time dae starts.'),
+		download_failed: _('The download or verification failed. The installed files were left untouched.'),
+		interrupted: _('The previous update was interrupted.'),
+		restart_failed_rollback: _('dae did not come back up after the update; the previous files were restored.'),
+		rollback_failed: _('dae is not running and the previous files could not be restored. Check the system log.')
 	};
 
 	return messages[token] || token || _('The dae service reported an issue.');
@@ -269,12 +239,10 @@ return baseclass.extend({
 	start: callStart,
 	stop: callStop,
 	restart: callRestart,
-	enable: callEnable,
-	disable: callDisable,
-	set_listen: callSetListen,
-	set_api_write: callSetApiWrite,
+	geoStatus: callGeoStatus,
+	geoUpdate: callGeoUpdate,
 	panelUrl: panelUrl,
-	splitListen: splitListen,
+	panelReason: panelReason,
 	statusIssue: statusIssue,
 	resultMessage: resultMessage,
 	errorMessage: errorMessage,

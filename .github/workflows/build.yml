@@ -200,9 +200,8 @@ jobs:
         run: |
           set -euo pipefail
           fakeroot bash .github/build-pkg.sh dae
-          # The panel is the same on every architecture, so one leg builds it.
-          # Its assets live in the package directory and it is architecture
-          # independent, so neither of the daemon's overrides applies to it.
+          # The LuCI page is architecture independent and carries no panel
+          # assets (the doona package provides those), so one leg builds it.
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
             PKG_ASSET_DIR= PKG_ARCH_OVERRIDE= fakeroot bash .github/build-pkg.sh luci-app-dae
           fi
@@ -323,41 +322,60 @@ jobs:
           VERSION: ${{ env.VERSION }}
           PANEL_VERSION: ${{ env.PANEL_VERSION }}
           TAG_VERSION: ${{ env.TAG_VERSION }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # The panel is published by szwjp/doona, not built here: point the
+          # reader at the file name that is actually in its newest release,
+          # and fall back to the release page when that lookup fails.
+          doona_tag="$(gh release view -R szwjp/doona --json tagName -q .tagName 2>/dev/null || true)"
+          doona_asset="$(gh release view -R szwjp/doona --json assets -q '.assets[].name' 2>/dev/null |
+            grep -E '^doona-[0-9][^/]*\.apk$' | head -n 1 || true)"
+          if [ -n "$doona_tag" ] && [ -n "$doona_asset" ]; then
+            doona_url="https://github.com/szwjp/doona/releases/download/${doona_tag}/${doona_asset}"
+          else
+            doona_url="https://github.com/szwjp/doona/releases"
+          fi
           # The file names are spelled out: apk resolves a URL as it is and
           # does not expand a wildcard, so a "*.apk" in the notes would send
           # the reader to a 404.
           cat > notes.md <<-EOF
-          dae 引擎（原生 HTTP 控制面）+ doona 面板。
+          dae 引擎（原生 HTTP 控制面）+ LuCI 页面；doona 面板由 szwjp/doona 单独发布。
 
           在 OpenWrt / ImmortalWrt 上安装（apk）：
 
-          apk v3 的 \`apk add\` 只认本地文件，不接受 URL，所以先把包下载下来再装：
+          apk v3 的 \`apk add\` 只认本地文件，不接受 URL，所以先把包下载下来再装。
+          luci-app-dae 依赖 doona 包，两个文件要在同一条命令里给它：
 
           \`\`\`sh
           cd /tmp
-          wget -O dae.apk \\
+          wget -O doona.apk \
+            ${doona_url}
+          wget -O dae.apk \
             https://github.com/szwjp/luci-app-dae/releases/download/v${TAG_VERSION}/dae-${VERSION}-x86_64.apk
-          wget -O luci-app-dae.apk \\
+          wget -O luci-app-dae.apk \
             https://github.com/szwjp/luci-app-dae/releases/download/v${TAG_VERSION}/luci-app-dae-${PANEL_VERSION}.apk
-          apk add --allow-untrusted ./dae.apk ./luci-app-dae.apk
+          apk add --allow-untrusted ./doona.apk ./dae.apk ./luci-app-dae.apk
           \`\`\`
 
           守护进程按架构分发：x86_64、arm64（aarch64_generic）、riscv64（riscv64_generic），
-          按设备选对应的一个；面板包与翻译包是 noarch。
+          按设备选对应的一个；面板包、LuCI 包与翻译包是 noarch。
+          可选装 \`doona-fonts\`（Noto Sans TC/SC），不装面板回退到系统字体。
 
           可选的 LuCI 中文翻译：
 
           \`\`\`sh
           cd /tmp
-          wget -O luci-i18n-dae-zh-cn.apk \\
+          wget -O luci-i18n-dae-zh-cn.apk \
             https://github.com/szwjp/luci-app-dae/releases/download/v${TAG_VERSION}/luci-i18n-dae-zh-cn-${PANEL_VERSION}.apk
           apk add --allow-untrusted ./luci-i18n-dae-zh-cn.apk
           \`\`\`
 
           服务默认禁用；启用方式：
           \`uci set dae.main.enabled=1 && uci commit dae && /etc/init.d/dae start\`
+
+          面板在 LuCI 的「服务 → dae」里打开，地址是 \`http://<路由器>:9527/ui/\`。
+          同一页面有 Geo 数据标签，用于手动更新 geoip.dat / geosite.dat。
 
           下载后可以先校验文件是否完整：
 

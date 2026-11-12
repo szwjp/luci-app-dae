@@ -3,7 +3,7 @@
 		"description": "Grant read-only access to the dae service state",
 		"read": {
 			"ubus": {
-				"dae": [ "status" ]
+				"dae": [ "status", "geo_status" ]
 			}
 		}
 	}
