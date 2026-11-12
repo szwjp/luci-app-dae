@@ -345,9 +345,12 @@ jobs:
           # The panel is published by szwjp/doona, not built here: point the
           # reader at the file name that is actually in its newest release,
           # and fall back to the release page when that lookup fails.
-          doona_tag="$(gh release view -R szwjp/doona --json tagName -q .tagName 2>/dev/null || true)"
-          doona_asset="$(gh release view -R szwjp/doona --json assets -q '.assets[].name' 2>/dev/null |
-            grep -E '^doona-[0-9][^/]*\.apk$' | head -n 1 || true)"
+          # The newest doona release is a prerelease, which "gh release view"
+          # (latest stable only) does not return; the API lists it. The Alpine
+          # apk matches the same pattern, so it is filtered out by name.
+          doona_tag="$(gh api repos/szwjp/doona/releases --jq '.[0].tag_name' 2>/dev/null || true)"
+          doona_asset="$(gh api repos/szwjp/doona/releases --jq '.[0].assets[].name' 2>/dev/null |
+            grep -E '^doona-[0-9][^/]*\.apk$' | grep -v '\.alpine\.apk$' | head -n 1 || true)"
           if [ -n "$doona_tag" ] && [ -n "$doona_asset" ]; then
             doona_url="https://github.com/szwjp/doona/releases/download/${doona_tag}/${doona_asset}"
           else
