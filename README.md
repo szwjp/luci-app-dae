@@ -43,7 +43,7 @@ wget -O doona.apk \
   https://github.com/szwjp/luci-app-dae/releases/latest/download/doona-0.1.0-r10.apk
 # LuCI 页面
 wget -O luci-app-dae.apk \
-  https://github.com/szwjp/luci-app-dae/releases/latest/download/luci-app-dae-2026.11.12-r1.apk
+  https://github.com/szwjp/luci-app-dae/releases/latest/download/luci-app-dae-2026.11.12-r2.apk
 apk add --allow-untrusted ./dae.apk ./doona.apk ./luci-app-dae.apk
 ```
 

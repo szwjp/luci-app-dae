@@ -3,9 +3,15 @@ dns {
     alidns: 'udp://dns.alidns.com:53'
     googledns: 'tcp+udp://dns.google:53'
   }
-  # The panel creates the first DNS rule inside this block. Without it there is
-  # nowhere to insert one and the DNS rule page can only list rules. dae accepts
-  # the empty block, and a rule added here becomes request { ... }.
+  # The panel adds the first DNS rule inside these blocks. dae requires both
+  # lists to name a fallback, so they are written here; the panel inserts a rule
+  # before the closing brace of the list it edits.
   routing {
+    request {
+      fallback: asis
+    }
+    response {
+      fallback: accept
+    }
   }
 }
