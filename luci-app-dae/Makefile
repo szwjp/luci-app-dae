@@ -14,8 +14,8 @@ PKG_NAME:=luci-app-dae
 # The page ships with the panel it opens, so the version follows doona's: its
 # 0.1.0-rc.9 release is packaged here as 0.1.0-r9. Keep both Makefiles on the
 # same number when the panel moves.
-PKG_VERSION:=0.1.0
-PKG_RELEASE:=9
+PKG_VERSION:=2026.11.12
+PKG_RELEASE:=1
 
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>
