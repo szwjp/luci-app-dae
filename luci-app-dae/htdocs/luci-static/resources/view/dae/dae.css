@@ -8,11 +8,6 @@
 .dae-page {
 	--dae-accent-rgb: 0, 122, 255;
 	--dae-accent: rgba(var(--dae-accent-rgb), 0.9);
-	--dae-accent-strong: rgba(var(--dae-accent-rgb), 1);
-	--dae-accent-border: rgba(var(--dae-accent-rgb), 0.35);
-	--dae-green: #34c759;
-	--dae-red: #ff3b30;
-	--dae-orange: #ff9500;
 
 	--dae-card-bg: rgba(128, 128, 128, 0.04);
 	--dae-card-border: rgba(128, 128, 128, 0.14);

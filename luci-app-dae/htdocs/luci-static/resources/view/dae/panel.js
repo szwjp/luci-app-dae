@@ -16,7 +16,7 @@ function el(tag, className, children) {
 }
 
 function button(label, className, onClick) {
-	const node = E('button', { 'class': className || 'cbi-button', 'type': 'button' }, label);
+	const node = E('button', { 'class': className, 'type': 'button' }, label);
 	if (onClick)
 		node.addEventListener('click', onClick);
 	return node;
@@ -97,8 +97,8 @@ return view.extend({
 		// geo update belongs to the same service as the panel link.
 		const tabService = button(_('Service'), 'dae-tab dae-tab--active');
 		const tabGeo = button(_('Geo data'), 'dae-tab');
-		const paneService = E('div', { 'class': 'dae-pane', 'role': 'tabpanel' });
-		const paneGeo = E('div', { 'class': 'dae-pane', 'role': 'tabpanel', 'hidden': true });
+		const paneService = E('div', { 'role': 'tabpanel' });
+		const paneGeo = E('div', { 'role': 'tabpanel', 'hidden': true });
 
 		function selectTab(name) {
 			const geo = name === 'geo';

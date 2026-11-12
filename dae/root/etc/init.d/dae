@@ -264,14 +264,6 @@ valid_secret() {
 	return 0
 }
 
-valid_ui_path() {
-	case "$1" in
-		''|/*) [ -n "$1" ] || return 1 ;;
-		*) return 1 ;;
-	esac
-	return 0
-}
-
 write_api_section() {
 	local listen secret write ui reason content
 
@@ -310,11 +302,6 @@ write_api_section() {
 		logger -t dae "invalid api secret (allowed: A-Za-z0-9 . _ + / -), refusing to start"
 		return 1
 	fi
-	if [ -n "$ui" ] && ! valid_ui_path "$ui"; then
-		logger -t dae "invalid panel path '$ui' (absolute path expected), refusing to start"
-		return 1
-	fi
-
 	content="$(
 		echo "api {"
 		echo "  enabled: true"

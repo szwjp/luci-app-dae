@@ -126,10 +126,6 @@ wait_new_instance() {
 	return 1
 }
 
-boot_enabled() {
-	/etc/init.d/dae enabled >/dev/null 2>&1
-}
-
 # Every IPv4 address the daemon may be reached at, most useful first.
 #
 # The API answers a wildcard bind only for an IP literal in the Host header, so
@@ -179,7 +175,7 @@ listen_addresses() {
 }
 
 status() {
-	local enabled listen port panel_available running boot addresses lan
+	local enabled listen port panel_available running addresses lan
 
 	config_load "$CONFIG"
 	config_get_bool enabled main enabled 0
@@ -191,7 +187,6 @@ status() {
 	esac
 
 	if service_running; then running=1; else running=0; fi
-	if boot_enabled; then boot=1; else boot=0; fi
 	if [ -r "$UI_PATH/index.html" ]; then panel_available=1; else panel_available=0; fi
 	addresses="$(listen_addresses)"
 	lan="${addresses%% *}"
@@ -199,7 +194,6 @@ status() {
 	json_init
 	json_add_boolean enabled "$enabled"
 	json_add_boolean running "$running"
-	json_add_boolean boot_enabled "$boot"
 	json_add_string listen "$listen"
 	json_add_int port "$port"
 	json_add_boolean panel_available "$panel_available"

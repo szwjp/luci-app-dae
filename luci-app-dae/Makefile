@@ -18,8 +18,6 @@ PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>
 PKG_URL:=https://github.com/szwjp/luci-app-dae
 
-LUCI_TITLE:=LuCI page for the dae engine
-LUCI_DESCRIPTION:=Shows the dae service state, opens the doona panel dae serves, and updates the geo data. The panel comes from the doona package.
 LUCI_DEPENDS:=+luci-base +dae +doona
 
 PKG_DESCRIPTION:=LuCI page for the dae engine. The doona panel itself is the doona package; dae serves it from its own listener.
