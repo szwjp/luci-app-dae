@@ -102,8 +102,16 @@ PKG_DESCRIPTION="$(get_mk_value "PKG_DESCRIPTION")"
 [ -n "$PKG_NAME" ] || { echo "error: PKG_NAME missing in $MAKEFILE" >&2; exit 1; }
 [ -n "$PKG_VERSION" ] || { echo "error: PKG_VERSION missing in $MAKEFILE" >&2; exit 1; }
 
+# A numeric PKG_RELEASE is OpenWrt's -rN number. A leading non-digit (rc7) is
+# a prerelease suffix that stands on its own: 0.1.0 with rc7 is 0.1.0-rc7,
+# not 0.1.0-rrc7.
 VERSION="$PKG_VERSION"
-[ -n "$PKG_RELEASE" ] && VERSION="${PKG_VERSION}-r${PKG_RELEASE}"
+if [ -n "$PKG_RELEASE" ]; then
+	case "$PKG_RELEASE" in
+		[0-9]*) VERSION="${PKG_VERSION}-r${PKG_RELEASE}" ;;
+		*) VERSION="${PKG_VERSION}-${PKG_RELEASE}" ;;
+	esac
+fi
 
 # Assets that do not belong under root/: "source=destination" pairs.
 ASSETS="$(get_mk_value "PKG_ASSETS")"

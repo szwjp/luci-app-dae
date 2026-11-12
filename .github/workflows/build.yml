@@ -263,22 +263,35 @@ jobs:
           set -euo pipefail
           MK_V="$(sed -n 's/^PKG_VERSION:=//p' dae/Makefile | head -1)"
           MK_R="$(sed -n 's/^PKG_RELEASE:=//p' dae/Makefile | head -1)"
-          EXPECTED="${MK_V}-r${MK_R}"
-          if [[ ! "$EXPECTED" =~ ^[0-9][0-9A-Za-z.]*-r[0-9]+$ ]]; then
-            echo "::error::Makefile 版本 $EXPECTED 非法（期望形如 2026.11.01-r3）"
-            exit 1
-          fi
           PANEL_V="$(sed -n 's/^PKG_VERSION:=//p' luci-app-dae/Makefile | head -1)"
           PANEL_R="$(sed -n 's/^PKG_RELEASE:=//p' luci-app-dae/Makefile | head -1)"
-          PANEL="${PANEL_V}-r${PANEL_R}"
-          if [[ ! "$PANEL" =~ ^[0-9][0-9A-Za-z.]*-r[0-9]+$ ]]; then
-            echo "::error::面板 Makefile 版本 $PANEL 非法（期望形如 2026.11.01-r3）"
+          # Must match build-pkg.sh: a numeric release is the -rN number, a
+          # leading non-digit (rc7) is a prerelease suffix of its own.
+          pkg_version() {
+            case "$2" in
+              '') printf '%s' "$1" ;;
+              [0-9]*) printf '%s-r%s' "$1" "$2" ;;
+              *) printf '%s-%s' "$1" "$2" ;;
+            esac
+          }
+          EXPECTED="$(pkg_version "$MK_V" "$MK_R")"
+          PANEL="$(pkg_version "$PANEL_V" "$PANEL_R")"
+          if [[ ! "$EXPECTED" =~ ^[0-9][0-9A-Za-z._-]*$ ]]; then
+            echo "::error::Makefile 版本 $EXPECTED 非法"
+            exit 1
+          fi
+          if [[ ! "$PANEL" =~ ^[0-9][0-9A-Za-z._-]*$ ]]; then
+            echo "::error::面板 Makefile 版本 $PANEL 非法"
             exit 1
           fi
           # 等位编号：把 -rN 规范为 -rNN，使 GitHub 按 tag 字符串排序时
-          # r02 < r10 < r11，Release 列表保持从大到小。
+          # r02 < r10 < r11，Release 列表保持从大到小。像 0.1.0-rc7 这样
+          # 的预发布串不动。
           canon() {
-            printf '%s-r%02d' "${1%-r*}" "$((10#${1##*-r}))"
+            case "$1" in
+              *-r[0-9]*) printf '%s-r%02d' "${1%-r*}" "$((10#${1##*-r}))" ;;
+              *) printf '%s' "$1" ;;
+            esac
           }
           TAG_VERSION="$(canon "$EXPECTED")"
           PANEL_TAG="$(canon "$PANEL")"
@@ -290,8 +303,8 @@ jobs:
           # tag is refused, so the publish step below cannot invent a tag on
           # the default branch.
           ON_TAG="${GITHUB_REF_NAME#v}"
-          if [[ ! "$ON_TAG" =~ ^[0-9][0-9A-Za-z.]*-r[0-9]+$ ]]; then
-            echo "::error::tag v$ON_TAG 格式非法（期望形如 v2026.11.01-r03）"
+          if [[ ! "$ON_TAG" =~ ^[0-9][0-9A-Za-z._-]*$ ]]; then
+            echo "::error::tag v$ON_TAG 格式非法"
             exit 1
           fi
           case "$GITHUB_REF_NAME" in
