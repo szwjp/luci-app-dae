@@ -223,7 +223,7 @@ staging 目录，`apk mkpkg` 写出容器格式。各包的 `Makefile` 只是这
 `.github/workflows/build.yml` 的 `DAE_BINARY_TAG` 必须一起改：
 
 ```sh
-DAE_TAG=<新的引擎 tag>   # 例如 v2026.11.12-nativeapi-r11
+DAE_TAG=v2026.11.12-nativeapi-r11   # 以 dae/digests.txt 的 tag 行为准
 curl -fsSL -o dae.tar.xz \
   "https://github.com/szwjp/dae/releases/download/$DAE_TAG/dae-linux-x86_64.tar.xz"
 tar -xJf dae.tar.xz
