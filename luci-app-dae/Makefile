@@ -13,8 +13,8 @@
 PKG_NAME:=luci-app-dae
 # The page is versioned by release date; the panel it opens keeps its own
 # upstream version (0.1.0-rN, see ../doona/Makefile).
-PKG_VERSION:=2026.11.12
-PKG_RELEASE:=2
+PKG_VERSION:=2026.11.13
+PKG_RELEASE:=3
 
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>
