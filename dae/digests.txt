@@ -7,8 +7,8 @@
 #
 # Bump this file and DAE_BINARY_TAG in .github/workflows/build.yml in the same
 # commit. The build fails when the tag here and the workflow's tag differ.
-tag v2026.11.12-nativeapi-r13
+tag v2026.11.13-nativeapi-r13
 
-ade5aae924691abae041631da8eb3aa3c311f5970e931a41d439e5d4b966433c  dae-linux-x86_64.tar.xz
-d9084ea96ac854b5d7a2231fdaed98af3c2b58170333c28e7eec3682271803c2  dae-linux-arm64.tar.xz
-c6635a5ae0269e5088452dfcdea419904ac57deae828366b59018654bba3b906  dae-linux-riscv64_rva23u64.tar.xz
+6c409208277f6290f6f5bd4e79896c5bd4e2ebeedf92ddcfe23a75cf8fa2101b  dae-linux-x86_64.tar.xz
+39f86cb6062dfe2040ae9414a1ad73e350f66887ce1aea8a5c53bf3c61f9fd9c  dae-linux-arm64.tar.xz
+343c9906fe55a26e655a2b1a14cb80ee5de3f3c320d7c1b7232cc3407eafb3ba  dae-linux-riscv64_rva23u64.tar.xz
