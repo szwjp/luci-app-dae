@@ -268,3 +268,12 @@ msgstr "確定"
 
 msgid "Confirm listener"
 msgstr "確定"
+
+msgid "Panel address"
+msgstr "面板存取位址"
+
+msgid "The address the panel is opened at. Saving restarts the service immediately."
+msgstr "面板開啟時使用的位址。儲存後會立即重新啟動服務。"
+
+msgid "Enter the panel address."
+msgstr "請輸入面板位址。"

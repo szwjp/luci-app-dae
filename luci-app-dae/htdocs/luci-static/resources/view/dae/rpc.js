@@ -15,7 +15,7 @@ const callSecret = rpc.declare({ object: 'dae', method: 'secret', expect: { '': 
 const callStart = rpc.declare({ object: 'dae', method: 'start', expect: { '': {} }, reject: true });
 const callStop = rpc.declare({ object: 'dae', method: 'stop', expect: { '': {} }, reject: true });
 const callRestart = rpc.declare({ object: 'dae', method: 'restart', expect: { '': {} }, reject: true });
-const callSetListen = rpc.declare({ object: 'dae', method: 'set_listen', params: [ 'listen' ], expect: { '': {} }, reject: true });
+const callSetListen = rpc.declare({ object: 'dae', method: 'set_listen', params: [ 'url' ], expect: { '': {} }, reject: true });
 const callSetWrite = rpc.declare({ object: 'dae', method: 'set_write', params: [ 'value' ], expect: { '': {} }, reject: true });
 const callGeoStatus = rpc.declare({ object: 'dae', method: 'geo_status', expect: { '': {} }, reject: true });
 const callGeoUpdate = rpc.declare({ object: 'dae', method: 'geo_update', expect: { '': {} }, reject: true });
@@ -109,35 +109,47 @@ function listenHost(listen) {
  * the first one that belongs to the network the browser is already talking to
  * is the one to take.
  */
+function panelAddress(status) {
+	if (!status || typeof status !== 'object')
+		return '';
+
+	const port = Number(status.port);
+	if (!Number.isInteger(port) || port < 1 || port > 65535)
+		return '';
+
+	const host = status.panel_host || '';
+	if (host)
+		return 'http://' + authorityHost(host) + ':' + port + '/ui/';
+
+	const browserHost = (window.location && window.location.hostname) || '';
+	const bound = listenHost(status.listen);
+	let fallback;
+	if (isWildcard(bound)) {
+		fallback = browserHost;
+		if (!isIpLiteral(fallback) && fallback !== 'localhost')
+			fallback = pickReachableAddress(status, browserHost);
+	}
+	else {
+		fallback = bound;
+	}
+	return fallback ? 'http://' + authorityHost(fallback) + ':' + port + '/ui/' : '';
+}
+
 function panelUrl(status) {
 	if (!status || !status.running || !status.panel_available)
 		return null;
 
-	const port = Number(status.port);
-	if (!Number.isInteger(port) || port < 1 || port > 65535)
+	const address = panelAddress(status);
+	if (!address)
 		return null;
 
 	const browserHost = (window.location && window.location.hostname) || '';
-	const bound = listenHost(status.listen);
-
-	let host;
-	if (isWildcard(bound)) {
-		host = browserHost;
-		if (!isIpLiteral(host) && host !== 'localhost')
-			host = pickReachableAddress(status, browserHost);
-	}
-	else {
-		host = bound;
-	}
-
-	if (!host)
-		return null;
-
+	const host = listenHost(address.replace(/^http:\/\//, ''));
 	// A loopback address only reaches a browser on the router itself.
 	if (isLoopback(host) && !isLoopback(browserHost))
 		return null;
 
-	return 'http://' + authorityHost(host) + ':' + port + '/ui/';
+	return address;
 }
 
 /*
@@ -249,6 +261,7 @@ return baseclass.extend({
 	},
 	geoStatus: callGeoStatus,
 	geoUpdate: callGeoUpdate,
+	panelAddress: panelAddress,
 	panelUrl: panelUrl,
 	panelReason: panelReason,
 	statusIssue: statusIssue,

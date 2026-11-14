@@ -175,11 +175,12 @@ listen_addresses() {
 }
 
 status() {
-	local enabled listen port panel_available running addresses lan write
+	local enabled listen port panel_available running addresses lan write panel_host
 
 	config_load "$CONFIG"
 	config_get_bool enabled main enabled 0
 	config_get listen main api_listen "$DEFAULT_LISTEN"
+	config_get panel_host main panel_host ""
 	# The switch the panel's writes depend on: dae refuses every configuration
 	# write without it, and the panel then shows the whole configuration as
 	# read-only.
@@ -200,6 +201,7 @@ status() {
 	json_add_boolean running "$running"
 	json_add_boolean write "$write"
 	json_add_string listen "$listen"
+	json_add_string panel_host "$panel_host"
 	json_add_int port "$port"
 	json_add_boolean panel_available "$panel_available"
 	json_add_string lan_address "$lan"
@@ -276,113 +278,107 @@ restart() {
 	fi
 }
 
-# Why a listener value cannot be used, or empty when it can. The rules match
-# the init script's own check (dae wants a numeric address and a port), so the
-# page can reject a value before the service is touched.
-listen_problem() {
-	local listen="$1" host port bracketed=0
+# Parse the panel address a user types into the host and port dae needs.
+# Sets PANEL_PROBLEM (empty on success), PANEL_HOST and PANEL_PORT. It runs in
+# the caller's shell, not a command substitution, so those assignments survive.
+# The bind address stays an implementation detail: loopback stays loopback, any
+# other host (LAN IP, router name) binds the wildcard so the typed URL works.
+parse_panel_url() {
+	PANEL_PROBLEM=""
+	PANEL_HOST=""
+	PANEL_PORT=""
+	local url="$1" rest host port inner
 
-	case "$listen" in
-		*:*)
-			host="${listen%:*}"
-			port="${listen##*:}"
-			;;
-		*)
-			echo no_port
-			return
-			;;
+	case "$url" in
+		http://*) rest="${url#http://}" ;;
+		https://*) PANEL_PROBLEM=https_unsupported; return ;;
+		*://*) PANEL_PROBLEM=scheme_unsupported; return ;;
+		*) rest="$url" ;;
 	esac
-
+	rest="${rest%%/*}"
+	rest="${rest%%\?*}"
+	rest="${rest%%#*}"
+	case "$rest" in
+		*:*) host="${rest%:*}"; port="${rest##*:}" ;;
+		*) PANEL_PROBLEM=no_port; return ;;
+	esac
 	case "$port" in
-		''|*[!0-9]*)
-			echo port_not_number
-			return
-			;;
+		''|*[!0-9]*) PANEL_PROBLEM=port_not_number; return ;;
 	esac
 	if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
-		echo port_out_of_range
+		PANEL_PROBLEM=port_out_of_range
 		return
 	fi
-
 	case "$host" in
-		\[*)
-			bracketed=1
-			host="${host#\[}"
-			host="${host%%\]*}"
-			;;
-	esac
-
-	case "$host" in
-		'')
-			echo no_host
-			return
-			;;
-		*:*)
-			if [ "$bracketed" -ne 1 ]; then
-				echo ipv6_needs_brackets
-				return
-			fi
-			case "$host" in
-				*[!0-9a-fA-F:]*)
-					echo host_not_numeric
-					return
-					;;
+		'') PANEL_PROBLEM=no_host; return ;;
+		\[*\])
+			inner="${host#\[}"
+			inner="${inner%%\]*}"
+			case "$inner" in
+				''|*[!0-9a-fA-F:]*) PANEL_PROBLEM=host_not_numeric; return ;;
 			esac
 			;;
+		*:*) PANEL_PROBLEM=ipv6_needs_brackets; return ;;
 		*)
 			case "$host" in
-				*[!0-9.]*)
-					echo host_not_numeric
-					return
-					;;
+				*[!A-Za-z0-9.-]*) PANEL_PROBLEM=host_not_numeric; return ;;
 			esac
 			;;
 	esac
+	PANEL_HOST="$host"
+	PANEL_PORT="$port"
 }
 
-# Save the listener and apply it by restarting dae, because the api section is
-# read at startup only. A new address that does not come up rolls back to the
-# previous one, so a typo cannot leave the service unreachable.
+# Save the panel address and apply it by restarting dae, because the API
+# listener is bound at startup. A new address that does not come up rolls back
+# to the previous one, so a typo cannot leave the panel unreachable.
 set_listen() {
-	local raw value old pid port problem
+	local raw value old_listen old_host bind host port problem
 
 	raw="$(cat 2>/dev/null)"
-	value="$(printf '%s' "$raw" | jsonfilter -e '@.listen' 2>/dev/null)"
+	value="$(printf '%s' "$raw" | jsonfilter -e '@.url' 2>/dev/null)"
 	value="$(printf '%s' "$value" | tr -d '\r\n')"
 	if [ -z "$value" ]; then
 		emit_result false listen_invalid
 		return 1
 	fi
 
-	# The init script maps localhost to loopback; do it here too, so the
-	# comparison below sees the value that will actually run.
-	case "$value" in
-		localhost:*) value="127.0.0.1:${value#localhost:}" ;;
-	esac
-
-	problem="$(listen_problem "$value")"
+	parse_panel_url "$value"
+	problem="$PANEL_PROBLEM"
 	if [ -n "$problem" ]; then
 		logger -t dae "set_listen rejected $value: $problem" 2>/dev/null
 		emit_result false listen_invalid
 		return 1
 	fi
+	host="$PANEL_HOST"
+	port="$PANEL_PORT"
+
+	case "$host" in
+		localhost|127.*|\[::1\]) bind="127.0.0.1:$port" ;;
+		*) bind="0.0.0.0:$port" ;;
+	esac
 
 	config_load "$CONFIG"
-	config_get old main api_listen "$DEFAULT_LISTEN"
-	if [ "$value" = "$old" ]; then
+	config_get old_listen main api_listen "$DEFAULT_LISTEN"
+	config_get old_host main panel_host ""
+	if [ "$bind" = "$old_listen" ] && [ "$host" = "$old_host" ]; then
 		emit_result true listen_unchanged
 		return 0
 	fi
 
 	# A port another service already listens on would make dae fail to bind, but
 	# the port check after a restart cannot tell which process owns it. Refuse it
-	# up front instead.
-	if port_listening "${value##*:}"; then
+	# up front; the current daemon owns the old port.
+	if [ "$port" != "${old_listen##*:}" ] && port_listening "$port"; then
 		emit_result false listen_in_use
 		return 1
 	fi
 
-	uci -q set "$CONFIG.main.api_listen=$value" || {
+	uci -q set "$CONFIG.main.api_listen=$bind" || {
+		emit_result false settings_write_failed
+		return 1
+	}
+	uci -q set "$CONFIG.main.panel_host=$host" || {
 		emit_result false settings_write_failed
 		return 1
 	}
@@ -395,21 +391,29 @@ set_listen() {
 		emit_result true listen_saved_stopped
 		return 0
 	fi
+	# A host-only change (router name instead of LAN IP) keeps the same bind:
+	# the new URL is display state and needs no restart.
+	if [ "$bind" = "$old_listen" ]; then
+		emit_result true listen_saved
+		return 0
+	fi
 
 	pid="$(service_pid)"
-	port="${value##*:}"
 	/etc/init.d/dae restart >/dev/null 2>&1
 	if wait_new_instance "$pid" "$WAIT_START" "$port"; then
 		emit_result true listen_saved
 		return 0
 	fi
 
-	# The new address did not come up: put the previous one back and start into
-	# it, so a failed edit does not take the panel away. A stop first forces the
-	# init script to rewrite /etc/dae/api.dae; a crash-looping instance keeps the
-	# old file otherwise.
+	# The new address did not come up: put the previous bind and host back and
+	# start into it. A stop first forces the init script to rewrite
+	# /etc/dae/api.dae; a crash-looping instance keeps the old file otherwise.
 	/etc/init.d/dae stop >/dev/null 2>&1
-	uci -q set "$CONFIG.main.api_listen=$old" || {
+	uci -q set "$CONFIG.main.api_listen=$old_listen" || {
+		emit_result false listen_rollback_failed
+		return 1
+	}
+	uci -q set "$CONFIG.main.panel_host=$old_host" || {
 		emit_result false listen_rollback_failed
 		return 1
 	}
@@ -418,7 +422,7 @@ set_listen() {
 		return 1
 	}
 	/etc/init.d/dae start >/dev/null 2>&1
-	if wait_new_instance "" "$WAIT_START" "${old##*:}"; then
+	if wait_new_instance "" "$WAIT_START" "${old_listen##*:}"; then
 		emit_result false listen_restart_failed
 	else
 		emit_result false listen_rollback_failed
@@ -617,7 +621,7 @@ geo_update() {
 # methods with the "list" argument and reaches a method with "call <method>".
 case "$1" in
 list)
-	echo '{"status":{},"secret":{},"start":{},"stop":{},"restart":{},"set_listen":{"listen":""},"set_write":{"value":0},"geo_status":{},"geo_update":{}}'
+	echo '{"status":{},"secret":{},"start":{},"stop":{},"restart":{},"set_listen":{"url":""},"set_write":{"value":0},"geo_status":{},"geo_update":{}}'
 	;;
 call)
 	case "$2" in

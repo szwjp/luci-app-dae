@@ -127,11 +127,11 @@ return view.extend({
 			'inputmode': 'url',
 			'spellcheck': 'false',
 			'autocomplete': 'off',
-			'placeholder': '0.0.0.0:9527',
-			'aria-label': _('Listener')
+			'placeholder': 'http://192.168.1.1:9527/ui/',
+			'aria-label': _('Panel address')
 		});
 		ui.listenApply = button(_('Confirm listener'), 'cbi-button', runListenSave);
-		ui.listenHint = note(_('dae needs a numeric address and a port. Saving restarts the service immediately.'));
+		ui.listenHint = note(_('The address the panel is opened at. Saving restarts the service immediately.'));
 
 		ui.reason = note('');
 
@@ -143,7 +143,7 @@ return view.extend({
 			el('div', 'dae-actions', [ ui.openPanel, ui.toggle, ui.restart ])
 		]));
 		statusCard.appendChild(el('div', 'dae-listen', [
-			el('span', 'dae-meta-label', _('Listener')),
+			el('span', 'dae-meta-label', _('Panel address')),
 			el('div', 'dae-listen-row', [ ui.listenInput, ui.listenApply ]),
 			ui.listenHint
 		]));
@@ -248,7 +248,7 @@ return view.extend({
 				: (enabled ? 'dae-badge--idle' : 'dae-badge--stop'));
 			ui.badge.textContent = running ? _('Running') : (enabled ? _('Stopped') : _('Disabled'));
 			if (document.activeElement !== ui.listenInput)
-				ui.listenInput.value = status.listen || '';
+				ui.listenInput.value = dae.panelAddress(status);
 			ui.listenInput.disabled = busy;
 			ui.listenApply.disabled = busy;
 
@@ -361,7 +361,7 @@ return view.extend({
 
 			const value = ui.listenInput.value.trim();
 			if (!value) {
-				message.textContent = _('Enter a listener address and port.');
+				message.textContent = _('Enter the panel address.');
 				return;
 			}
 
