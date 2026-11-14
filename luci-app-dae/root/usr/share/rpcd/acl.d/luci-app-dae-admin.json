@@ -16,6 +16,7 @@
 					"start",
 					"stop",
 					"restart",
+					"set_listen",
 					"set_write",
 					"geo_update"
 				]

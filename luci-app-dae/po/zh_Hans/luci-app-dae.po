@@ -226,3 +226,36 @@ msgstr "面板现在可以修改配置。"
 
 msgid "The panel can only read the configuration now."
 msgstr "面板现在只能读取配置。"
+
+msgid "Apply"
+msgstr "应用"
+
+msgid "dae needs a numeric address and a port. Saving restarts the service immediately."
+msgstr "dae 需要数值地址和端口；保存后会立即重启服务。"
+
+msgid "Enter a listener address and port."
+msgstr "请输入监听地址和端口。"
+
+msgid "The listener was saved."
+msgstr "监听地址已保存。"
+
+msgid "The listener was not saved."
+msgstr "监听地址未保存。"
+
+msgid "The listener was saved and is in effect."
+msgstr "监听地址已保存并生效。"
+
+msgid "The listener was saved. It takes effect when the service starts."
+msgstr "监听地址已保存，将在服务启动时生效。"
+
+msgid "The listener did not change."
+msgstr "监听地址没有变化。"
+
+msgid "The listener is invalid. Use a numeric address and a port, such as 0.0.0.0:9527."
+msgstr "监听地址无效。请填写数值地址和端口，例如 0.0.0.0:9527。"
+
+msgid "The new listener did not start; the previous address was restored."
+msgstr "新监听地址未能启动，已恢复原地址。"
+
+msgid "The new listener did not start and the previous address could not be restored. Check the system log."
+msgstr "新监听地址未能启动，且原地址恢复失败。请检查系统日志。"

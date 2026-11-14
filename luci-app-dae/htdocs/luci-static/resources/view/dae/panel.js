@@ -31,15 +31,6 @@ function note(text, hidden) {
 	return E('p', attrs, text);
 }
 
-function metaItem(label, value) {
-	return el('span', 'dae-meta-item', [
-		el('span', 'dae-meta-label', label),
-		value && value.nodeType
-			? value
-			: (value == null || value === '' ? '—' : String(value))
-	]);
-}
-
 function formatBytes(bytes) {
 	const value = Number(bytes);
 	if (!value)
@@ -130,7 +121,18 @@ return view.extend({
 		});
 		ui.toggle.setAttribute('data-action', 'start');
 		ui.restart = button(_('Restart'), 'cbi-button', function() { runAction('restart'); });
-		ui.listen = el('span', '', '—');
+		ui.listenInput = E('input', {
+			'class': 'cbi-input-text dae-listen-input',
+			'type': 'text',
+			'inputmode': 'url',
+			'spellcheck': 'false',
+			'autocomplete': 'off',
+			'placeholder': '0.0.0.0:9527',
+			'aria-label': _('Listener')
+		});
+		ui.listenApply = button(_('Apply'), 'cbi-button cbi-button-action', runListenSave);
+		ui.listenHint = note(_('dae needs a numeric address and a port. Saving restarts the service immediately.'));
+
 		ui.reason = note('');
 
 		statusCard.appendChild(el('div', 'dae-card-head', [
@@ -140,7 +142,14 @@ return view.extend({
 			]),
 			el('div', 'dae-actions', [ ui.openPanel, ui.toggle, ui.restart ])
 		]));
-		statusCard.appendChild(el('div', 'dae-meta', [ metaItem(_('Listener'), ui.listen) ]));
+		statusCard.appendChild(el('div', 'dae-listen', [
+			el('div', 'dae-listen-text', [
+				el('span', 'dae-meta-label', _('Listener')),
+				ui.listenInput,
+				ui.listenHint
+			]),
+			ui.listenApply
+		]));
 		statusCard.appendChild(ui.reason);
 
 		// dae refuses every configuration write unless its `api` section turns
@@ -241,7 +250,10 @@ return view.extend({
 				? 'dae-badge--run'
 				: (enabled ? 'dae-badge--idle' : 'dae-badge--stop'));
 			ui.badge.textContent = running ? _('Running') : (enabled ? _('Stopped') : _('Disabled'));
-			ui.listen.textContent = status.listen || '—';
+			if (document.activeElement !== ui.listenInput)
+				ui.listenInput.value = status.listen || '';
+			ui.listenInput.disabled = busy;
+			ui.listenApply.disabled = busy;
 
 			const write = dae.writeEnabled(status);
 			ui.writeState.textContent = write
@@ -338,6 +350,32 @@ return view.extend({
 				message.textContent = dae.resultMessage(result, _('The operation completed.'));
 			}).catch(function(error) {
 				message.textContent = dae.errorMessage(error, _('The operation failed.'));
+			}).finally(function() {
+				busy = false;
+				refreshStatus();
+			});
+		}
+
+		// Saving the listener restarts dae too: the address is bound at startup,
+		// and the backend rolls back to the previous one when the new bind fails.
+		function runListenSave() {
+			if (busy)
+				return;
+
+			const value = ui.listenInput.value.trim();
+			if (!value) {
+				message.textContent = _('Enter a listener address and port.');
+				return;
+			}
+
+			busy = true;
+			message.textContent = _('Working…');
+			updateStatus(statusData, null);
+
+			dae.setListen(value).then(dae.ensureOk).then(function(result) {
+				message.textContent = dae.resultMessage(result, _('The listener was saved.'));
+			}).catch(function(error) {
+				message.textContent = dae.errorMessage(error, _('The listener was not saved.'));
 			}).finally(function() {
 				busy = false;
 				refreshStatus();

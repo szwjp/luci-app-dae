@@ -276,6 +276,145 @@ restart() {
 	fi
 }
 
+# Why a listener value cannot be used, or empty when it can. The rules match
+# the init script's own check (dae wants a numeric address and a port), so the
+# page can reject a value before the service is touched.
+listen_problem() {
+	local listen="$1" host port bracketed=0
+
+	case "$listen" in
+		*:*)
+			host="${listen%:*}"
+			port="${listen##*:}"
+			;;
+		*)
+			echo no_port
+			return
+			;;
+	esac
+
+	case "$port" in
+		''|*[!0-9]*)
+			echo port_not_number
+			return
+			;;
+	esac
+	if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+		echo port_out_of_range
+		return
+	fi
+
+	case "$host" in
+		\[*)
+			bracketed=1
+			host="${host#\[}"
+			host="${host%%\]*}"
+			;;
+	esac
+
+	case "$host" in
+		'')
+			echo no_host
+			return
+			;;
+		*:*)
+			if [ "$bracketed" -ne 1 ]; then
+				echo ipv6_needs_brackets
+				return
+			fi
+			case "$host" in
+				*[!0-9a-fA-F:]*)
+					echo host_not_numeric
+					return
+					;;
+			esac
+			;;
+		*)
+			case "$host" in
+				*[!0-9.]*)
+					echo host_not_numeric
+					return
+					;;
+			esac
+			;;
+	esac
+}
+
+# Save the listener and apply it by restarting dae, because the api section is
+# read at startup only. A new address that does not come up rolls back to the
+# previous one, so a typo cannot leave the service unreachable.
+set_listen() {
+	local raw value old pid port problem
+
+	raw="$(cat 2>/dev/null)"
+	value="$(printf '%s' "$raw" | jsonfilter -e '@.listen' 2>/dev/null)"
+	value="$(printf '%s' "$value" | tr -d '\r\n')"
+	if [ -z "$value" ]; then
+		emit_result false listen_invalid
+		return 1
+	fi
+
+	# The init script maps localhost to loopback; do it here too, so the
+	# comparison below sees the value that will actually run.
+	case "$value" in
+		localhost:*) value="127.0.0.1:${value#localhost:}" ;;
+	esac
+
+	problem="$(listen_problem "$value")"
+	if [ -n "$problem" ]; then
+		logger -t dae "set_listen rejected $value: $problem" 2>/dev/null
+		emit_result false listen_invalid
+		return 1
+	fi
+
+	config_load "$CONFIG"
+	config_get old main api_listen "$DEFAULT_LISTEN"
+	if [ "$value" = "$old" ]; then
+		emit_result true listen_unchanged
+		return 0
+	fi
+
+	uci -q set "$CONFIG.main.api_listen=$value" || {
+		emit_result false settings_write_failed
+		return 1
+	}
+	uci -q commit "$CONFIG" || {
+		emit_result false settings_write_failed
+		return 1
+	}
+
+	if ! service_running; then
+		emit_result true listen_saved_stopped
+		return 0
+	fi
+
+	pid="$(service_pid)"
+	port="${value##*:}"
+	/etc/init.d/dae restart >/dev/null 2>&1
+	if wait_new_instance "$pid" "$WAIT_START" "$port"; then
+		emit_result true listen_saved
+		return 0
+	fi
+
+	# The new address did not come up: put the previous one back and restart
+	# into it, so a failed edit does not take the panel away.
+	uci -q set "$CONFIG.main.api_listen=$old" || {
+		emit_result false listen_rollback_failed
+		return 1
+	}
+	uci -q commit "$CONFIG" || {
+		emit_result false listen_rollback_failed
+		return 1
+	}
+	/etc/init.d/dae restart >/dev/null 2>&1
+	if wait_new_instance "" "$WAIT_START" "${old##*:}"; then
+		emit_result false listen_restart_failed
+	else
+		emit_result false listen_rollback_failed
+	fi
+	return 1
+}
+
 # Whether the panel may change the configuration. dae reads this switch only
 # at startup: the api section is restart-required, so the value is saved and
 # the service restarted in one step. Without it every configuration page of

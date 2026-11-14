@@ -15,6 +15,7 @@ const callSecret = rpc.declare({ object: 'dae', method: 'secret', expect: { '': 
 const callStart = rpc.declare({ object: 'dae', method: 'start', expect: { '': {} }, reject: true });
 const callStop = rpc.declare({ object: 'dae', method: 'stop', expect: { '': {} }, reject: true });
 const callRestart = rpc.declare({ object: 'dae', method: 'restart', expect: { '': {} }, reject: true });
+const callSetListen = rpc.declare({ object: 'dae', method: 'set_listen', params: [ 'listen' ], expect: { '': {} }, reject: true });
 const callSetWrite = rpc.declare({ object: 'dae', method: 'set_write', params: [ 'value' ], expect: { '': {} }, reject: true });
 const callGeoStatus = rpc.declare({ object: 'dae', method: 'geo_status', expect: { '': {} }, reject: true });
 const callGeoUpdate = rpc.declare({ object: 'dae', method: 'geo_update', expect: { '': {} }, reject: true });
@@ -28,7 +29,7 @@ let pageStylesInstalled = false;
  * It has to be raised whenever dae.css changes; the package build stamps
  * the package version in.
  */
-const STYLE_VERSION = '20261113';
+const STYLE_VERSION = '20261114';
 
 function installStyles() {
 	if (pageStylesInstalled || document.getElementById('dae-page-styles'))

@@ -208,6 +208,43 @@
 	line-height: 1.55;
 }
 
+/* The listener editor. dae binds its API listener at startup, so the value is
+   saved by the rpcd backend, which restarts the service and rolls back to the
+   previous address when the new bind fails. */
+.dae-listen {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: center;
+	justify-content: space-between;
+	margin-top: 16px;
+	padding-top: 14px;
+	border-top: 1px solid var(--dae-card-border);
+}
+
+.dae-listen-text {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 0;
+	flex: 1 1 320px;
+}
+
+.dae-listen .dae-note {
+	margin: 0;
+}
+
+.dae-listen-input {
+	width: 100%;
+	max-width: 320px;
+	font-family: var(--dae-mono);
+	font-size: 13px;
+}
+
+.dae-listen .cbi-button {
+	flex: 0 0 auto;
+}
+
 /* The panel-writes switch. dae keeps the whole configuration read-only until
    its api section allows writes, so the state and its one control sit in the
    same row. */
