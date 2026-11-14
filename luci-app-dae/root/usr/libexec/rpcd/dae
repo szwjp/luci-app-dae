@@ -25,6 +25,8 @@ WAIT_START=12
 GEO_SCRIPT=/usr/bin/dae-geo-update
 GEO_STATE=/var/run/dae-geo-update.state
 GEO_LOG=/var/log/dae-geo-update.log
+# Held by the spawned script through an inherited descriptor; see geo_update.
+GEO_START_LOCK=/var/run/dae-geo-update.start.lock
 GEO_DIR=/usr/share/v2ray
 UI_PATH=/usr/share/doona
 DEFAULT_LISTEN=0.0.0.0:9527
@@ -175,7 +177,7 @@ listen_addresses() {
 }
 
 status() {
-	local enabled listen port panel_available running addresses lan write panel_host
+	local enabled boot listen port panel_available running addresses lan write panel_host
 
 	config_load "$CONFIG"
 	config_get_bool enabled main enabled 0
@@ -192,12 +194,17 @@ status() {
 	esac
 
 	if service_running; then running=1; else running=0; fi
+	# Autostart is the rc.d link, not the UCI bit: the Startup page disables
+	# the service by removing the links, and a reboot then does not start it
+	# even though enabled stays 1 (starting from the LuCI page sets both).
+	if [ -e /etc/rc.d/S99dae ]; then boot=1; else boot=0; fi
 	if [ -r "$UI_PATH/index.html" ]; then panel_available=1; else panel_available=0; fi
 	addresses="$(listen_addresses)"
 	lan="${addresses%% *}"
 
 	json_init
 	json_add_boolean enabled "$enabled"
+	json_add_boolean boot_enabled "$boot"
 	json_add_boolean running "$running"
 	json_add_boolean write "$write"
 	json_add_string listen "$listen"
@@ -602,13 +609,29 @@ geo_update() {
 		return 1
 	fi
 
+	# The state file is only written once the script is running, so two calls
+	# arriving together both saw "idle" and both spawned a script; the second
+	# one was then silently dropped by the script's own lock while the reply
+	# still said "started". This lock closes that window: the script inherits
+	# the open descriptor, so the lock stays held for its whole lifetime and
+	# a second call fails here with a truthful "busy".
+	exec 8>"$GEO_START_LOCK" 2>/dev/null || {
+		emit_result false geo_unavailable
+		return 1
+	}
+	if ! flock -n 8; then
+		emit_result false geo_busy
+		return 1
+	fi
+
 	# No wait here: the script takes the lock, writes its state and does the
 	# work on its own. The page polls geo_status for the progress.
 	#
 	# The update has to outlive this process: rpcd exits as soon as the reply
 	# is written. setsid puts it in a session of its own (busybox has it, and
 	# ImmortalWrt does not ship nohup); without it the daemonising shell would
-	# take the child down with it on some images.
+	# take the child down with it on some images. Descriptor 8 is inherited on
+	# purpose; the script uses descriptor 9 for its own lock.
 	if command -v setsid >/dev/null 2>&1; then
 		setsid "$GEO_SCRIPT" </dev/null >/dev/null 2>&1 &
 	else

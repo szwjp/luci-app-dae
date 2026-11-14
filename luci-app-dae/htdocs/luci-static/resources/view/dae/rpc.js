@@ -29,7 +29,7 @@ let pageStylesInstalled = false;
  * It has to be raised whenever dae.css changes; the package build stamps
  * the package version in.
  */
-const STYLE_VERSION = '20261114-3';
+const STYLE_VERSION = '20261114-4';
 
 function installStyles() {
 	if (pageStylesInstalled || document.getElementById('dae-page-styles'))
@@ -219,6 +219,13 @@ function statusIssue(token) {
 		restart_failed: _('The dae service did not restart. Check the system log.'),
 		settings_write_failed: _('The settings could not be written. Check the system log.'),
 		invalid_operation: _('The operation is not known.'),
+		listen_invalid: _('The listener is invalid. Use a numeric address and a port, such as 0.0.0.0:9527.'),
+		listen_in_use: _('That port is already in use. Choose another one.'),
+		listen_unchanged: _('The listener did not change.'),
+		listen_saved: _('The listener was saved and is in effect.'),
+		listen_saved_stopped: _('The listener was saved. It takes effect when the service starts.'),
+		listen_restart_failed: _('The new listener did not start; the previous address was restored.'),
+		listen_rollback_failed: _('The new listener did not start and the previous address could not be restored. Check the system log.'),
 		geo_started: _('The update was started.'),
 		geo_busy: _('Another update is already running.'),
 		geo_unavailable: _('The update script is missing. Reinstall the dae package.'),
@@ -255,6 +262,7 @@ return baseclass.extend({
 	start: callStart,
 	stop: callStop,
 	restart: callRestart,
+	setListen: callSetListen,
 	setWrite: callSetWrite,
 	writeEnabled: function(status) {
 		return !!(status && status.write === true);

@@ -170,6 +170,12 @@ body:has(.dae-page) #tabmenu {
 	align-items: center;
 }
 
+/* The panel is served by dae, so the link does nothing while it is stopped. */
+.dae-actions .dae-disabled {
+	opacity: 0.5;
+	pointer-events: none;
+}
+
 /* ---------- status badge ---------- */
 
 .dae-badge {
@@ -199,6 +205,20 @@ body:has(.dae-page) #tabmenu {
 	color: #b3261e;
 	background: rgba(255, 59, 48, 0.12);
 	border-color: rgba(255, 59, 48, 0.3);
+}
+
+/* Autostart is not the same fact as running or enabled: the Startup page
+   turns it off by dropping the rc.d link, so it has a badge of its own. */
+.dae-badge--boot {
+	color: var(--dae-muted);
+	background: var(--dae-card-bg);
+	border-color: var(--dae-card-border);
+}
+
+.dae-badge--boot-off {
+	color: #a05c00;
+	background: rgba(255, 149, 0, 0.1);
+	border-color: rgba(255, 149, 0, 0.28);
 }
 
 /* ---------- meta rows ---------- */

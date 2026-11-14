@@ -32,6 +32,12 @@ msgstr "已停止"
 msgid "Disabled"
 msgstr "未啟用"
 
+msgid "Autostart"
+msgstr "開機自啟"
+
+msgid "No autostart"
+msgstr "不自啟"
+
 msgid "Listener"
 msgstr "監聽位址"
 

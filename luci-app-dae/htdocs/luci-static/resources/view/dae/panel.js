@@ -111,6 +111,9 @@ return view.extend({
 		// ---- service tab ----------------------------------------------------
 
 		ui.badge = el('span', 'dae-badge dae-badge--stop', _('Disabled'));
+		// Autostart is a separate fact from the UCI enabled bit: the Startup
+		// page disables it by removing the rc.d link.
+		ui.bootBadge = el('span', 'dae-badge dae-badge--boot', _('Autostart'));
 		ui.openPanel = E('a', {
 			'class': 'cbi-button cbi-button-action',
 			'target': '_blank',
@@ -138,7 +141,8 @@ return view.extend({
 		statusCard.appendChild(el('div', 'dae-card-head', [
 			el('div', 'dae-card-head-main', [
 				el('h3', 'dae-card-title', _('Status')),
-				ui.badge
+				ui.badge,
+				ui.bootBadge
 			]),
 			el('div', 'dae-actions', [ ui.openPanel, ui.toggle, ui.restart ])
 		]));
@@ -247,6 +251,20 @@ return view.extend({
 				? 'dae-badge--run'
 				: (enabled ? 'dae-badge--idle' : 'dae-badge--stop'));
 			ui.badge.textContent = running ? _('Running') : (enabled ? _('Stopped') : _('Disabled'));
+
+			if (status.boot_enabled === true || status.boot_enabled === false) {
+				const boot = status.boot_enabled === true;
+
+				ui.bootBadge.hidden = false;
+				ui.bootBadge.className = 'dae-badge ' + (boot ? 'dae-badge--boot' : 'dae-badge--boot-off');
+				ui.bootBadge.textContent = boot ? _('Autostart') : _('No autostart');
+			}
+			else {
+				// A backend that predates the field cannot tell; do not claim
+				// either state.
+				ui.bootBadge.hidden = true;
+			}
+
 			if (document.activeElement !== ui.listenInput)
 				ui.listenInput.value = dae.panelAddress(status);
 			ui.listenInput.disabled = busy;
@@ -263,13 +281,19 @@ return view.extend({
 			ui.writeToggle.disabled = busy || !running;
 
 			const url = dae.panelUrl(status);
-			if (url) {
+			if (running && url) {
 				ui.openPanel.setAttribute('href', url);
 				ui.openPanel.setAttribute('target', '_blank');
 				ui.openPanel.setAttribute('rel', 'noopener noreferrer');
+				ui.openPanel.removeAttribute('aria-disabled');
+				ui.openPanel.classList.remove('dae-disabled');
 			}
 			else {
+				// The panel is served by dae itself; a stopped daemon has no
+				// page to open, so the link must not look usable.
 				ui.openPanel.removeAttribute('href');
+				ui.openPanel.setAttribute('aria-disabled', 'true');
+				ui.openPanel.classList.add('dae-disabled');
 			}
 
 			ui.toggle.textContent = running ? _('Stop') : _('Start');
