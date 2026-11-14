@@ -40,10 +40,10 @@ wget -O dae.apk \
   https://github.com/szwjp/luci-app-dae/releases/latest/download/dae-2.1.1-r14-x86_64.apk
 # 面板
 wget -O doona.apk \
-  https://github.com/szwjp/luci-app-dae/releases/latest/download/doona-0.1.0-r10.apk
+  https://github.com/szwjp/luci-app-dae/releases/latest/download/doona-0.1.0-r11.apk
 # LuCI 页面
 wget -O luci-app-dae.apk \
-  https://github.com/szwjp/luci-app-dae/releases/latest/download/luci-app-dae-2026.11.14-r4.apk
+  https://github.com/szwjp/luci-app-dae/releases/latest/download/luci-app-dae-2026.11.14-r5.apk
 apk add --allow-untrusted ./dae.apk ./doona.apk ./luci-app-dae.apk
 ```
 
