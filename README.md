@@ -37,13 +37,13 @@ apk v3 的 `apk add` 只认本地文件，不接受 URL，所以先把包下载�
 cd /tmp
 # 引擎：按设备架构选一个
 wget -O dae.apk \
-  https://github.com/szwjp/luci-app-dae/releases/latest/download/dae-2.1.1-r14-x86_64.apk
+  https://github.com/szwjp/luci-app-dae/releases/latest/download/dae-2.1.1-r15-x86_64.apk
 # 面板
 wget -O doona.apk \
-  https://github.com/szwjp/luci-app-dae/releases/latest/download/doona-0.1.0-r11.apk
+  https://github.com/szwjp/luci-app-dae/releases/latest/download/doona-0.1.0-r16.apk
 # LuCI 页面
 wget -O luci-app-dae.apk \
-  https://github.com/szwjp/luci-app-dae/releases/latest/download/luci-app-dae-2026.11.14-r5.apk
+  https://github.com/szwjp/luci-app-dae/releases/latest/download/luci-app-dae-2026.11.14-r6.apk
 apk add --allow-untrusted ./dae.apk ./doona.apk ./luci-app-dae.apk
 ```
 
@@ -239,7 +239,7 @@ staging 目录，`apk mkpkg` 写出容器格式。各包的 `Makefile` 只是这
 `.github/workflows/build.yml` 的 `DAE_BINARY_TAG` 必须一起改：
 
 ```sh
-DAE_TAG=v2026.11.14-nativeapi-r14   # 以 dae/digests.txt 的 tag 行为准
+DAE_TAG=v2026.11.14-nativeapi-r15   # 以 dae/digests.txt 的 tag 行为准
 curl -fsSL -o dae.tar.xz \
   "https://github.com/szwjp/dae/releases/download/$DAE_TAG/dae-linux-x86_64.tar.xz"
 tar -xJf dae.tar.xz

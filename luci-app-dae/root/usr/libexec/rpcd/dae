@@ -374,6 +374,14 @@ set_listen() {
 		return 0
 	fi
 
+	# A port another service already listens on would make dae fail to bind, but
+	# the port check after a restart cannot tell which process owns it. Refuse it
+	# up front instead.
+	if port_listening "${value##*:}"; then
+		emit_result false listen_in_use
+		return 1
+	fi
+
 	uci -q set "$CONFIG.main.api_listen=$value" || {
 		emit_result false settings_write_failed
 		return 1
@@ -396,8 +404,11 @@ set_listen() {
 		return 0
 	fi
 
-	# The new address did not come up: put the previous one back and restart
-	# into it, so a failed edit does not take the panel away.
+	# The new address did not come up: put the previous one back and start into
+	# it, so a failed edit does not take the panel away. A stop first forces the
+	# init script to rewrite /etc/dae/api.dae; a crash-looping instance keeps the
+	# old file otherwise.
+	/etc/init.d/dae stop >/dev/null 2>&1
 	uci -q set "$CONFIG.main.api_listen=$old" || {
 		emit_result false listen_rollback_failed
 		return 1
@@ -406,7 +417,7 @@ set_listen() {
 		emit_result false listen_rollback_failed
 		return 1
 	}
-	/etc/init.d/dae restart >/dev/null 2>&1
+	/etc/init.d/dae start >/dev/null 2>&1
 	if wait_new_instance "" "$WAIT_START" "${old##*:}"; then
 		emit_result false listen_restart_failed
 	else
@@ -606,7 +617,7 @@ geo_update() {
 # methods with the "list" argument and reaches a method with "call <method>".
 case "$1" in
 list)
-	echo '{"status":{},"secret":{},"start":{},"stop":{},"restart":{},"set_write":{"value":0},"geo_status":{},"geo_update":{}}'
+	echo '{"status":{},"secret":{},"start":{},"stop":{},"restart":{},"set_listen":{"listen":""},"set_write":{"value":0},"geo_status":{},"geo_update":{}}'
 	;;
 call)
 	case "$2" in
@@ -615,6 +626,7 @@ call)
 		start) start ;;
 		stop) stop ;;
 		restart) restart ;;
+		set_listen) set_listen ;;
 		set_write) set_write ;;
 		geo_status) geo_status ;;
 		geo_update) geo_update ;;

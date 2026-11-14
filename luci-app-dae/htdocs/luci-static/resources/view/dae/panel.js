@@ -130,7 +130,7 @@ return view.extend({
 			'placeholder': '0.0.0.0:9527',
 			'aria-label': _('Listener')
 		});
-		ui.listenApply = button(_('Apply'), 'cbi-button cbi-button-action', runListenSave);
+		ui.listenApply = button(_('Confirm listener'), 'cbi-button', runListenSave);
 		ui.listenHint = note(_('dae needs a numeric address and a port. Saving restarts the service immediately.'));
 
 		ui.reason = note('');
@@ -143,12 +143,9 @@ return view.extend({
 			el('div', 'dae-actions', [ ui.openPanel, ui.toggle, ui.restart ])
 		]));
 		statusCard.appendChild(el('div', 'dae-listen', [
-			el('div', 'dae-listen-text', [
-				el('span', 'dae-meta-label', _('Listener')),
-				ui.listenInput,
-				ui.listenHint
-			]),
-			ui.listenApply
+			el('span', 'dae-meta-label', _('Listener')),
+			el('div', 'dae-listen-row', [ ui.listenInput, ui.listenApply ]),
+			ui.listenHint
 		]));
 		statusCard.appendChild(ui.reason);
 
@@ -497,11 +494,14 @@ return view.extend({
 
 		// ---- assemble -------------------------------------------------------
 
-		page.appendChild(el('div', 'dae-header', [
+		// The tabs replace the page title at the top of the view; the title and
+		// its explanation belong to the service pane, so the geo tab opens on its
+		// own content.
+		paneService.insertBefore(el('div', 'dae-header', [
 			el('h2', '', _('dae')),
 			el('p', 'dae-header-sub',
 				_('The doona panel drives the dae engine over its native HTTP API. dae serves the panel itself; this page shows the service state, opens the panel and updates the geo data.'))
-		]));
+		]), paneService.firstChild);
 		page.appendChild(E('div', { 'class': 'dae-tabs', 'role': 'tablist' }, [ tabService, tabGeo ]));
 		page.appendChild(paneService);
 		page.appendChild(paneGeo);

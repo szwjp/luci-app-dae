@@ -15,7 +15,7 @@
 
 PKG_NAME:=dae
 PKG_VERSION:=2.1.1
-PKG_RELEASE:=14
+PKG_RELEASE:=15
 
 PKG_LICENSE:=AGPL-3.0-only
 PKG_MAINTAINER:=szwjp <szwjp@users.noreply.github.com>

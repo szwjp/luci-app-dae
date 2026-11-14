@@ -3,6 +3,6 @@
 # The archive comes from szwjp/doona's release, which publishes a .dgst beside
 # every asset; that only proves the two agree, so the value pinned here is the
 # one the build checks. Bump this file together with doona/Makefile's version.
-tag v0.1.0-rc.11
+tag v0.1.0-rc.16
 
-e23a13e9820798f803ba97041b2cc778f376d957fd014ee9247effd63b1c5997  doona-0.1.0-rc.11.tar.gz
+1155a9730fe7a9bdac87f49ea760b7b6983bd5fda3523b56002edb08f5833c0e  doona-0.1.0-rc.16.tar.gz

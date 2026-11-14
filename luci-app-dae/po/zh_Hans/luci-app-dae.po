@@ -259,3 +259,12 @@ msgstr "新监听地址未能启动，已恢复原地址。"
 
 msgid "The new listener did not start and the previous address could not be restored. Check the system log."
 msgstr "新监听地址未能启动，且原地址恢复失败。请检查系统日志。"
+
+msgid "That port is already in use. Choose another one."
+msgstr "该端口已被占用，请换一个端口。"
+
+msgid "Confirm"
+msgstr "确定"
+
+msgid "Confirm listener"
+msgstr "确定"

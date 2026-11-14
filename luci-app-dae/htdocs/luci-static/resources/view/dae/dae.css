@@ -68,6 +68,13 @@
 	max-width: 720px;
 }
 
+/* This view's tabs take the place of LuCI's page-title tab; :has keeps the
+   rule scoped to the mounted view instead of leaking to the next page when the
+   stylesheet stays in the document. */
+body:has(.dae-page) #tabmenu {
+	display: none !important;
+}
+
 /* ---------- tabs ---------- */
 
 .dae-tabs {
@@ -213,21 +220,18 @@
    previous address when the new bind fails. */
 .dae-listen {
 	display: flex;
-	flex-wrap: wrap;
-	gap: 12px;
-	align-items: center;
-	justify-content: space-between;
+	flex-direction: column;
+	gap: 8px;
 	margin-top: 16px;
 	padding-top: 14px;
 	border-top: 1px solid var(--dae-card-border);
 }
 
-.dae-listen-text {
+.dae-listen-row {
 	display: flex;
-	flex-direction: column;
-	gap: 6px;
-	min-width: 0;
-	flex: 1 1 320px;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
 }
 
 .dae-listen .dae-note {
@@ -235,8 +239,8 @@
 }
 
 .dae-listen-input {
-	width: 100%;
-	max-width: 320px;
+	width: 320px;
+	max-width: 100%;
 	font-family: var(--dae-mono);
 	font-size: 13px;
 }
