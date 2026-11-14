@@ -194,10 +194,10 @@ status() {
 	esac
 
 	if service_running; then running=1; else running=0; fi
-	# Autostart is the rc.d link, not the UCI bit: the Startup page disables
-	# the service by removing the links, and a reboot then does not start it
-	# even though enabled stays 1 (starting from the LuCI page sets both).
-	if [ -e /etc/rc.d/S99dae ]; then boot=1; else boot=0; fi
+	# Autostart needs both: the UCI switch (the init script refuses to start
+	# without it) and the rc.d link (the Startup page disables the service by
+	# removing the links, without touching the UCI bit).
+	if [ "$enabled" -eq 1 ] && [ -e /etc/rc.d/S99dae ]; then boot=1; else boot=0; fi
 	if [ -r "$UI_PATH/index.html" ]; then panel_available=1; else panel_available=0; fi
 	addresses="$(listen_addresses)"
 	lan="${addresses%% *}"
