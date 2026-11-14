@@ -29,7 +29,7 @@ let pageStylesInstalled = false;
  * It has to be raised whenever dae.css changes; the package build stamps
  * the package version in.
  */
-const STYLE_VERSION = '20261114';
+const STYLE_VERSION = '20261114-3';
 
 function installStyles() {
 	if (pageStylesInstalled || document.getElementById('dae-page-styles'))
